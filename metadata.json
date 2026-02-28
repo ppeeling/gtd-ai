@@ -1,0 +1,5 @@
+{
+  "name": "GTD Master",
+  "description": "A Getting Things Done (GTD) application with task timers, list management, and an AI assistant.",
+  "requestFramePermissions": []
+}
