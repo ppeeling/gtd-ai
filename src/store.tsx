@@ -183,14 +183,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       const parsed = JSON.parse(data);
       if (parsed.lists && parsed.tasks) {
+        
+        // Ensure tasks have required fields
+        const processedTasks = parsed.tasks.map((t: any) => ({
+          ...t,
+          id: t.id || crypto.randomUUID(),
+          createdAt: t.createdAt || Date.now(),
+          timer: t.timer || { isRunning: false, elapsedTime: 0 },
+          completed: !!t.completed,
+          name: t.name || 'Untitled Task',
+          listId: t.listId || 'inbox'
+        }));
+
+        const processedData = {
+          ...parsed,
+          tasks: processedTasks
+        };
+
         setState((s) => {
           const existingListIds = new Set(s.lists.map(l => l.id));
           const existingTaskIds = new Set(s.tasks.map(t => t.id));
           const existingPromptIds = new Set(s.savedPrompts.map(p => p.id));
           
-          const newLists = (parsed.lists || []).filter((l: any) => !existingListIds.has(l.id));
-          const newTasks = (parsed.tasks || []).filter((t: any) => !existingTaskIds.has(t.id));
-          const newPrompts = (parsed.savedPrompts || []).filter((p: any) => !existingPromptIds.has(p.id));
+          const newLists = (processedData.lists || []).filter((l: any) => !existingListIds.has(l.id));
+          const newTasks = (processedData.tasks || []).filter((t: any) => !existingTaskIds.has(t.id));
+          const newPrompts = (processedData.savedPrompts || []).filter((p: any) => !existingPromptIds.has(p.id));
           
           return {
             lists: [...s.lists, ...newLists],
@@ -201,7 +218,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         await apiFetch('/api/import', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(parsed)
+          body: JSON.stringify(processedData)
         });
       } else {
         alert('Invalid data format');

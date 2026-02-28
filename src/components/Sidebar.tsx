@@ -85,13 +85,22 @@ export function Sidebar({
 
         <div className="px-3 space-y-1">
           {state.lists.map((list) => (
-            <button
+            <div
               key={list.id}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setActiveListId(list.id);
+                  setIsChatActive(false);
+                }
+              }}
               onClick={() => {
                 setActiveListId(list.id);
                 setIsChatActive(false);
               }}
-              className={`group w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
+              className={`group w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors cursor-pointer ${
                 !isChatActive && activeListId === list.id
                   ? 'bg-zinc-800 text-white'
                   : 'hover:bg-zinc-800/50 text-zinc-300'
@@ -115,7 +124,7 @@ export function Sidebar({
                   <Trash2 size={14} />
                 </button>
               )}
-            </button>
+            </div>
           ))}
         </div>
 

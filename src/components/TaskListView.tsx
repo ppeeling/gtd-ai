@@ -63,8 +63,8 @@ export function TaskListView({ listId }: { listId: string }) {
               </div>
             )}
 
-            {activeTasks.map((task) => (
-              <TaskItem key={task.id} task={task} />
+            {activeTasks.map((task, index) => (
+              <TaskItem key={`active-${task.id}-${index}`} task={task} />
             ))}
 
             {showCompleted && completedTasks.length > 0 && (
@@ -73,8 +73,8 @@ export function TaskListView({ listId }: { listId: string }) {
                   Completed
                 </h3>
                 <div className="space-y-3">
-                  {completedTasks.map((task) => (
-                    <TaskItem key={task.id} task={task} />
+                  {completedTasks.map((task, index) => (
+                    <TaskItem key={`completed-${task.id}-${index}`} task={task} />
                   ))}
                 </div>
               </div>
