@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Task, List } from '../types';
 import { useAppStore } from '../store';
-import { Play, Square, RotateCcw, Calendar, Clock, MoreVertical, Edit2, CheckCircle2, Circle } from 'lucide-react';
+import { Play, Square, RotateCcw, Calendar, Clock, MoreVertical, CheckCircle2, Circle } from 'lucide-react';
 
 export const TaskItem: React.FC<{ task: Task }> = ({ task }) => {
   const { updateTask, deleteTask, state } = useAppStore();
@@ -70,10 +70,17 @@ export const TaskItem: React.FC<{ task: Task }> = ({ task }) => {
   };
 
   const handleSaveEdit = () => {
-    if (editName.trim()) {
+    if (editName.trim() && editName !== task.name) {
       updateTask(task.id, { name: editName.trim() });
-      setIsEditing(false);
+    } else {
+      setEditName(task.name);
     }
+    setIsEditing(false);
+  };
+
+  const handleCancelEdit = () => {
+    setEditName(task.name);
+    setIsEditing(false);
   };
 
   const handleMove = (listId: string) => {
@@ -99,8 +106,11 @@ export const TaskItem: React.FC<{ task: Task }> = ({ task }) => {
                 type="text"
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSaveEdit()}
-                onBlur={handleSaveEdit}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSaveEdit();
+                  if (e.key === 'Escape') handleCancelEdit();
+                }}
+                onBlur={handleCancelEdit}
                 className="w-full px-2 py-1 text-sm bg-zinc-800 border border-indigo-500 text-zinc-100 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
@@ -125,16 +135,6 @@ export const TaskItem: React.FC<{ task: Task }> = ({ task }) => {
 
             {showMenu && (
               <div className="absolute right-0 mt-1 w-48 bg-zinc-800 border border-zinc-700 rounded-lg shadow-lg z-10 py-1">
-                <button
-                  onClick={() => {
-                    setIsEditing(true);
-                    setShowMenu(false);
-                  }}
-                  className="w-full text-left px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-700 flex items-center gap-2"
-                >
-                  <Edit2 size={14} /> Edit Name
-                </button>
-                <div className="border-t border-zinc-700 my-1"></div>
                 <div className="px-4 py-1 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Move to...</div>
                 {state.lists.map((list) => (
                   <button
@@ -161,7 +161,7 @@ export const TaskItem: React.FC<{ task: Task }> = ({ task }) => {
 
       <div className="flex flex-wrap items-center justify-between gap-3 ml-9 mt-1">
         <div className="flex items-center gap-4 text-xs text-zinc-500">
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 min-w-[100px]">
             <Calendar size={14} />
             <input
               type="date"
@@ -170,10 +170,11 @@ export const TaskItem: React.FC<{ task: Task }> = ({ task }) => {
                 const date = e.target.value ? new Date(e.target.value).getTime() : undefined;
                 updateTask(task.id, { dueDate: date });
               }}
-              className="bg-transparent border-none p-0 focus:ring-0 cursor-pointer hover:text-zinc-300 [color-scheme:dark]"
+              onClick={(e) => (e.target as any).showPicker?.()}
+              className="bg-transparent border-none p-0 focus:ring-0 cursor-pointer hover:text-zinc-300 [color-scheme:dark] w-full min-h-[24px]"
             />
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 min-w-[140px]">
             <Clock size={14} />
             <input
               type="datetime-local"
@@ -182,7 +183,8 @@ export const TaskItem: React.FC<{ task: Task }> = ({ task }) => {
                 const date = e.target.value ? new Date(e.target.value).getTime() : undefined;
                 updateTask(task.id, { reminderDate: date });
               }}
-              className="bg-transparent border-none p-0 focus:ring-0 cursor-pointer hover:text-zinc-300 [color-scheme:dark]"
+              onClick={(e) => (e.target as any).showPicker?.()}
+              className="bg-transparent border-none p-0 focus:ring-0 cursor-pointer hover:text-zinc-300 [color-scheme:dark] w-full min-h-[24px]"
             />
           </div>
         </div>

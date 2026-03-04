@@ -5,6 +5,7 @@ export interface List {
   id: ListId;
   name: string;
   isSystem?: boolean;
+  order?: number;
 }
 
 export interface TaskTimer {

@@ -16,6 +16,7 @@ interface AppContextType {
   deleteTask: (id: string) => void;
   addList: (name: string) => void;
   deleteList: (id: string) => void;
+  reorderLists: (reorderedLists: List[]) => void;
   savePrompt: (name: string, prompt: string) => void;
   deletePrompt: (id: string) => void;
   importData: (data: string) => void;
@@ -126,7 +127,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addList = async (name: string) => {
-    const newList: List = { id: crypto.randomUUID(), name, isSystem: false };
+    const newList: List = { id: crypto.randomUUID(), name, isSystem: false, order: state.lists.length };
     setState((s) => ({ ...s, lists: [...s.lists, newList] }));
     
     try {
@@ -149,6 +150,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     
     try {
       await apiFetch(`/api/lists/${id}`, { method: 'DELETE' });
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const reorderLists = async (reorderedLists: List[]) => {
+    setState((s) => ({ ...s, lists: reorderedLists }));
+    
+    try {
+      const updates = reorderedLists.map((list, index) => ({ id: list.id, order: index }));
+      await apiFetch('/api/lists/reorder', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ updates })
+      });
     } catch (e) {
       console.error(e);
     }
@@ -309,6 +325,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         deleteTask,
         addList,
         deleteList,
+        reorderLists,
         savePrompt,
         deletePrompt,
         importData,

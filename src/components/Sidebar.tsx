@@ -1,6 +1,7 @@
-import { Plus, List as ListIcon, Bot, Download, Upload, Trash2, X } from 'lucide-react';
+import { Plus, List as ListIcon, Bot, Download, Upload, Trash2, X, GripVertical } from 'lucide-react';
 import { useAppStore } from '../store';
 import React, { useState, useRef } from 'react';
+import { Reorder } from 'motion/react';
 
 export function Sidebar({
   activeListId,
@@ -15,7 +16,7 @@ export function Sidebar({
   setIsChatActive: (active: boolean) => void;
   onClose?: () => void;
 }) {
-  const { state, addList, deleteList, exportData, importData } = useAppStore();
+  const { state, addList, deleteList, reorderLists, exportData, importData } = useAppStore();
   const [newListName, setNewListName] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -83,10 +84,16 @@ export function Sidebar({
           Lists
         </div>
 
-        <div className="px-3 space-y-1">
+        <Reorder.Group
+          axis="y"
+          values={state.lists}
+          onReorder={reorderLists}
+          className="px-3 space-y-1"
+        >
           {state.lists.map((list) => (
-            <div
+            <Reorder.Item
               key={list.id}
+              value={list}
               role="button"
               tabIndex={0}
               onKeyDown={(e) => {
@@ -106,6 +113,7 @@ export function Sidebar({
                   : 'hover:bg-zinc-800/50 text-zinc-300'
               }`}
             >
+              <GripVertical size={14} className="text-zinc-600 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing" />
               <ListIcon size={18} className="text-zinc-500" />
               <div className="flex-1 truncate text-left">{list.name}</div>
               {!list.isSystem && (
@@ -124,9 +132,9 @@ export function Sidebar({
                   <Trash2 size={14} />
                 </button>
               )}
-            </div>
+            </Reorder.Item>
           ))}
-        </div>
+        </Reorder.Group>
 
         <form onSubmit={handleAddList} className="px-4 mt-2">
           <div className="flex items-center gap-2">

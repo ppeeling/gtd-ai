@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../store';
 import { TaskItem } from './TaskItem';
-import { Plus, Eye, EyeOff } from 'lucide-react';
+import { Plus, Eye, EyeOff, Search } from 'lucide-react';
 
 export function TaskListView({ listId }: { listId: string }) {
   const { state, addTask } = useAppStore();
   const [newTaskName, setNewTaskName] = useState('');
   const [showCompleted, setShowCompleted] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const list = state.lists.find((l) => l.id === listId);
-  const tasks = state.tasks.filter((t) => t.listId === listId);
+  const tasks = state.tasks.filter((t) => t.listId === listId && t.name.toLowerCase().includes(searchQuery.toLowerCase()));
   const activeTasks = tasks.filter((t) => !t.completed);
   const completedTasks = tasks.filter((t) => t.completed);
 
@@ -25,15 +26,27 @@ export function TaskListView({ listId }: { listId: string }) {
 
   return (
     <div className="flex-1 flex flex-col h-full bg-zinc-950">
-      <div className="px-4 md:px-8 py-6 border-b border-zinc-800 bg-zinc-900 flex items-center justify-between">
+      <div className="px-4 md:px-8 py-6 border-b border-zinc-800 bg-zinc-900 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <h2 className="text-2xl font-bold text-zinc-100 tracking-tight">{list.name}</h2>
-        <button
-          onClick={() => setShowCompleted(!showCompleted)}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-zinc-400 bg-zinc-800 rounded-lg hover:bg-zinc-700 transition-colors"
-        >
-          {showCompleted ? <EyeOff size={16} /> : <Eye size={16} />}
-          <span className="hidden sm:inline">{showCompleted ? 'Hide Completed' : 'Show Completed'}</span>
-        </button>
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+            <input
+              type="text"
+              placeholder="Search tasks..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 pr-4 py-1.5 text-sm bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-64"
+            />
+          </div>
+          <button
+            onClick={() => setShowCompleted(!showCompleted)}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-zinc-400 bg-zinc-800 rounded-lg hover:bg-zinc-700 transition-colors shrink-0"
+          >
+            {showCompleted ? <EyeOff size={16} /> : <Eye size={16} />}
+            <span className="hidden sm:inline">{showCompleted ? 'Hide Completed' : 'Show Completed'}</span>
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 md:p-8">

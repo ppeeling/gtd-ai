@@ -57,6 +57,7 @@ app.get("/api/state", async (req, res) => {
     ]);
     
     let lists = listsSnap.docs.map(d => d.data());
+    lists.sort((a, b) => (a.order || 0) - (b.order || 0));
     const tasks = tasksSnap.docs.map(d => d.data());
     const savedPrompts = promptsSnap.docs.map(d => d.data());
 
@@ -90,8 +91,25 @@ app.get("/api/state", async (req, res) => {
 app.post("/api/lists", async (req, res) => {
   try {
     const firestore = getDb();
-    const { id, name, isSystem } = req.body;
-    await firestore.collection('lists').doc(id).set({ id, name, isSystem: !!isSystem });
+    const { id, name, isSystem, order } = req.body;
+    await firestore.collection('lists').doc(id).set({ id, name, isSystem: !!isSystem, order: order || 0 });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put("/api/lists/reorder", async (req, res) => {
+  try {
+    const firestore = getDb();
+    const { updates } = req.body; // Array of { id, order }
+    const batch = firestore.batch();
+    
+    for (const update of updates) {
+      batch.update(firestore.collection('lists').doc(update.id), { order: update.order });
+    }
+    
+    await batch.commit();
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
