@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../store';
 import { TaskItem } from './TaskItem';
-import { Plus, Eye, EyeOff, Search } from 'lucide-react';
+import { Plus, Eye, EyeOff, Search, XCircle } from 'lucide-react';
 
 export function TaskListView({ listId }: { listId: string }) {
   const { state, addTask } = useAppStore();
@@ -43,8 +43,17 @@ export function TaskListView({ listId }: { listId: string }) {
               placeholder="Search all tasks..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 pr-4 py-1.5 text-sm bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-64"
+              className="pl-9 pr-10 py-1.5 text-sm bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-64"
             />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors"
+                aria-label="Clear search"
+              >
+                <XCircle size={16} />
+              </button>
+            )}
           </div>
           <button
             onClick={() => setShowCompleted(!showCompleted)}

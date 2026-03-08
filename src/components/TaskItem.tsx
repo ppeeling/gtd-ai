@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Task, List } from '../types';
 import { useAppStore } from '../store';
-import { Play, Square, RotateCcw, Calendar, Clock, MoreVertical, CheckCircle2, Circle } from 'lucide-react';
+import { Play, Square, RotateCcw, Calendar, Clock, MoreVertical, CheckCircle2, Circle, XCircle } from 'lucide-react';
 
 export const TaskItem: React.FC<{ task: Task }> = ({ task }) => {
   const { updateTask, deleteTask, state } = useAppStore();
@@ -100,7 +100,7 @@ export const TaskItem: React.FC<{ task: Task }> = ({ task }) => {
 
         <div className="flex-1 min-w-0">
           {isEditing ? (
-            <div className="flex items-center gap-2">
+            <div className="relative flex items-center">
               <input
                 autoFocus
                 type="text"
@@ -111,8 +111,18 @@ export const TaskItem: React.FC<{ task: Task }> = ({ task }) => {
                   if (e.key === 'Escape') handleCancelEdit();
                 }}
                 onBlur={handleCancelEdit}
-                className="w-full px-2 py-1 text-sm bg-zinc-800 border border-indigo-500 text-zinc-100 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-2 py-1 pr-8 text-sm bg-zinc-800 border border-indigo-500 text-zinc-100 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
+              <button
+                onMouseDown={(e) => {
+                  e.preventDefault(); // Prevent blur from firing before click
+                  handleCancelEdit();
+                }}
+                className="absolute right-2 text-zinc-400 hover:text-zinc-200 transition-colors"
+                aria-label="Cancel edit"
+              >
+                <XCircle size={14} />
+              </button>
             </div>
           ) : (
             <h3 
