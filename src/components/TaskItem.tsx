@@ -134,7 +134,7 @@ export const TaskItem: React.FC<{ task: Task }> = ({ task }) => {
             </button>
 
             {showMenu && (
-              <div className="absolute right-0 mt-1 w-48 bg-zinc-800 border border-zinc-700 rounded-lg shadow-lg z-10 py-1">
+              <div className="absolute right-0 mt-1 w-48 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 py-1">
                 <div className="px-4 py-1 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Move to...</div>
                 {state.lists.map((list) => (
                   <button
