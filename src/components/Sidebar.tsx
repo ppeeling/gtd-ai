@@ -1,4 +1,4 @@
-import { Plus, List as ListIcon, Bot, Download, Upload, Trash2, X, GripVertical } from 'lucide-react';
+import { Plus, List as ListIcon, Bot, Download, Upload, Trash2, X, GripVertical, Calendar as CalendarIcon } from 'lucide-react';
 import { useAppStore } from '../store';
 import React, { useState, useRef } from 'react';
 import { Reorder } from 'motion/react';
@@ -68,15 +68,32 @@ export function Sidebar({
       </div>
 
       <div className="flex-1 overflow-y-auto py-4 flex flex-col gap-2">
-        <div className="px-3">
+        <div className="px-3 space-y-1">
           <button
-            onClick={() => setIsChatActive(true)}
+            onClick={() => {
+              setIsChatActive(true);
+              if (onClose) onClose();
+            }}
             className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
               isChatActive ? 'bg-indigo-600 text-white' : 'hover:bg-zinc-800 text-zinc-300'
             }`}
           >
             <Bot size={18} />
             <span className="font-medium">AI Assistant</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setIsChatActive(false);
+              setActiveListId('__calendar__');
+              if (onClose) onClose();
+            }}
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
+              !isChatActive && activeListId === '__calendar__' ? 'bg-indigo-600 text-white' : 'hover:bg-zinc-800 text-zinc-300'
+            }`}
+          >
+            <CalendarIcon size={18} />
+            <span className="font-medium">Calendar</span>
           </button>
         </div>
 

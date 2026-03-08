@@ -3,12 +3,19 @@ import { AppProvider } from './store';
 import { Sidebar } from './components/Sidebar';
 import { TaskListView } from './components/TaskListView';
 import { GeminiChat } from './components/GeminiChat';
+import { CalendarView } from './components/CalendarView';
 import { Menu } from 'lucide-react';
 
 function AppContent() {
   const [activeListId, setActiveListId] = useState('inbox');
   const [isChatActive, setIsChatActive] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  const renderContent = () => {
+    if (isChatActive) return <GeminiChat />;
+    if (activeListId === '__calendar__') return <CalendarView />;
+    return <TaskListView listId={activeListId} />;
+  };
 
   return (
     <div className="flex h-screen w-full bg-zinc-950 text-zinc-100 overflow-hidden font-sans">
@@ -26,6 +33,7 @@ function AppContent() {
           activeListId={activeListId}
           setActiveListId={(id) => {
             setActiveListId(id);
+            setIsChatActive(false);
             setIsSidebarOpen(false);
           }}
           isChatActive={isChatActive}
@@ -50,11 +58,7 @@ function AppContent() {
         </div>
 
         <div className="flex-1 overflow-hidden">
-          {isChatActive ? (
-            <GeminiChat />
-          ) : (
-            <TaskListView listId={activeListId} />
-          )}
+          {renderContent()}
         </div>
       </main>
     </div>

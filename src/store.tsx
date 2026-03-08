@@ -70,7 +70,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       })
       .catch(err => {
         console.error('Failed to load state', err);
-        if (err.message !== 'Unauthorized') {
+        if (err.message === 'Unauthorized' || err.message.includes('Unauthorized')) {
+          setIsLocked(true);
+        } else {
           setError(err.message);
         }
       });
@@ -86,7 +88,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
     
     // Optimistic update
-    setState((s) => ({ ...s, tasks: [...s.tasks, newTask] }));
+    setState((s) => ({ ...s, tasks: [newTask, ...s.tasks] }));
     
     try {
       await apiFetch('/api/tasks', {
