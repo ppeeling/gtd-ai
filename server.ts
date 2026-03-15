@@ -2,6 +2,10 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore, Firestore } from "firebase-admin/firestore";
+import { v4 as uuidv4 } from "uuid";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import { z } from "zod";
 
 let db: Firestore | null = null;
 
@@ -34,7 +38,7 @@ app.use(express.json({ limit: '50mb' }));
 const PORT = 3000;
 
 // Authentication Middleware
-app.use('/api', (req, res, next) => {
+app.use(['/api', '/mcp'], (req, res, next) => {
   const configuredPasscode = process.env.APP_PASSCODE;
   if (!configuredPasscode) {
     return next();
@@ -44,6 +48,135 @@ app.use('/api', (req, res, next) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   next();
+});
+
+// Email Webhook
+app.post("/api/webhooks/email", async (req, res) => {
+  try {
+    const firestore = getDb();
+    
+    // Handle different webhook formats (SendGrid, Mailgun, Postmark, etc.)
+    const subject = req.body.subject || req.body.Subject || req.body['subject'];
+    const text = req.body.text || req.body.TextBody || req.body['body-plain'];
+    const html = req.body.html || req.body.HtmlBody || req.body['body-html'];
+    
+    if (!subject) {
+      return res.status(400).json({ error: "Missing subject" });
+    }
+
+    const newTask = {
+      id: uuidv4(),
+      listId: 'inbox',
+      name: subject,
+      completed: false,
+      timer: { isRunning: false, elapsedTime: 0 },
+      createdAt: Date.now(),
+      notes: text || html || '',
+    };
+
+    await firestore.collection('tasks').doc(newTask.id).set(newTask);
+    res.json({ success: true, task: newTask });
+  } catch (error: any) {
+    console.error("Email webhook error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// MCP Server Setup
+const mcp = new McpServer({
+  name: "GTD Master",
+  version: "1.0.0"
+});
+
+mcp.tool("list_tasks", "List all tasks", {}, async () => {
+  try {
+    const firestore = getDb();
+    const tasksSnap = await firestore.collection('tasks').get();
+    const tasks = tasksSnap.docs.map(d => d.data());
+    return {
+      content: [{ type: "text", text: JSON.stringify(tasks, null, 2) }]
+    };
+  } catch (error: any) {
+    return {
+      content: [{ type: "text", text: `Error: ${error.message}` }],
+      isError: true
+    };
+  }
+});
+
+mcp.tool("add_task", "Add a new task", {
+  name: z.string().describe("The name of the task"),
+  listId: z.string().optional().describe("The ID of the list to add the task to (defaults to 'inbox')")
+}, async ({ name, listId }) => {
+  try {
+    const firestore = getDb();
+    const newTask = {
+      id: uuidv4(),
+      listId: listId || 'inbox',
+      name,
+      completed: false,
+      timer: { isRunning: false, elapsedTime: 0 },
+      createdAt: Date.now()
+    };
+    await firestore.collection('tasks').doc(newTask.id).set(newTask);
+    return {
+      content: [{ type: "text", text: `Task added successfully: ${JSON.stringify(newTask)}` }]
+    };
+  } catch (error: any) {
+    return {
+      content: [{ type: "text", text: `Error: ${error.message}` }],
+      isError: true
+    };
+  }
+});
+
+mcp.tool("update_task", "Update an existing task", {
+  id: z.string().describe("The ID of the task to update"),
+  name: z.string().optional().describe("The new name of the task"),
+  completed: z.boolean().optional().describe("Whether the task is completed"),
+  listId: z.string().optional().describe("The ID of the list to move the task to")
+}, async ({ id, name, completed, listId }) => {
+  try {
+    const firestore = getDb();
+    const updates: any = {};
+    if (name !== undefined) updates.name = name;
+    if (completed !== undefined) updates.completed = completed;
+    if (listId !== undefined) updates.listId = listId;
+    
+    await firestore.collection('tasks').doc(id).update(updates);
+    return {
+      content: [{ type: "text", text: `Task updated successfully` }]
+    };
+  } catch (error: any) {
+    return {
+      content: [{ type: "text", text: `Error: ${error.message}` }],
+      isError: true
+    };
+  }
+});
+
+const mcpTransports = new Map<string, SSEServerTransport>();
+
+app.get("/mcp/sse", async (req, res) => {
+  const transport = new SSEServerTransport("/mcp/messages", res);
+  mcpTransports.set(transport.sessionId, transport);
+  
+  res.on('close', () => {
+    mcpTransports.delete(transport.sessionId);
+  });
+
+  await mcp.connect(transport);
+});
+
+app.post("/mcp/messages", async (req, res) => {
+  const sessionId = req.query.sessionId as string;
+  const transport = mcpTransports.get(sessionId);
+  
+  if (transport) {
+    await transport.handlePostMessage(req, res, req.body);
+  } else {
+    res.status(404).json({ error: "Session not found" });
+  }
 });
 
 // API Routes
