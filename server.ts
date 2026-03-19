@@ -50,38 +50,6 @@ app.use(['/api', '/mcp'], (req, res, next) => {
   next();
 });
 
-// Email Webhook
-app.post("/api/webhooks/email", async (req, res) => {
-  try {
-    const firestore = getDb();
-    
-    // Handle different webhook formats (SendGrid, Mailgun, Postmark, etc.)
-    const subject = req.body.subject || req.body.Subject || req.body['subject'];
-    const text = req.body.text || req.body.TextBody || req.body['body-plain'];
-    const html = req.body.html || req.body.HtmlBody || req.body['body-html'];
-    
-    if (!subject) {
-      return res.status(400).json({ error: "Missing subject" });
-    }
-
-    const newTask = {
-      id: uuidv4(),
-      listId: 'inbox',
-      name: subject,
-      completed: false,
-      timer: { isRunning: false, elapsedTime: 0 },
-      createdAt: Date.now(),
-      notes: text || html || '',
-    };
-
-    await firestore.collection('tasks').doc(newTask.id).set(newTask);
-    res.json({ success: true, task: newTask });
-  } catch (error: any) {
-    console.error("Email webhook error:", error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
 // MCP Server Setup
 const mcp = new McpServer({
   name: "GTD Master",
@@ -240,6 +208,23 @@ app.put("/api/lists/reorder", async (req, res) => {
     
     for (const update of updates) {
       batch.update(firestore.collection('lists').doc(update.id), { order: update.order });
+    }
+    
+    await batch.commit();
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put("/api/tasks/reorder", async (req, res) => {
+  try {
+    const firestore = getDb();
+    const { updates } = req.body; // Array of { id, order }
+    const batch = firestore.batch();
+    
+    for (const update of updates) {
+      batch.update(firestore.collection('tasks').doc(update.id), { order: update.order });
     }
     
     await batch.commit();

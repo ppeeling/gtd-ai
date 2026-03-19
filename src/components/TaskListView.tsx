@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../store';
 import { TaskItem } from './TaskItem';
-import { Plus, Eye, EyeOff, Search, XCircle } from 'lucide-react';
+import { Plus, Eye, EyeOff, Search, XCircle, GripVertical } from 'lucide-react';
+import { Reorder } from 'motion/react';
 
 export function TaskListView({ listId }: { listId: string }) {
-  const { state, addTask } = useAppStore();
+  const { state, addTask, reorderTasks } = useAppStore();
   const [newTaskName, setNewTaskName] = useState('');
   const [showCompleted, setShowCompleted] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -14,7 +15,12 @@ export function TaskListView({ listId }: { listId: string }) {
   
   const tasks = isSearching 
     ? state.tasks.filter((t) => t.name.toLowerCase().includes(searchQuery.toLowerCase()))
-    : state.tasks.filter((t) => t.listId === listId);
+    : state.tasks.filter((t) => t.listId === listId).sort((a, b) => {
+        if (a.order !== undefined && b.order !== undefined) return a.order - b.order;
+        if (a.order !== undefined) return -1;
+        if (b.order !== undefined) return 1;
+        return b.createdAt - a.createdAt;
+      });
     
   const activeTasks = tasks.filter((t) => !t.completed);
   const completedTasks = tasks.filter((t) => t.completed);
@@ -96,40 +102,86 @@ export function TaskListView({ listId }: { listId: string }) {
               </div>
             )}
 
-            {activeTasks.map((task, index) => {
-              const taskList = state.lists.find(l => l.id === task.listId);
-              return (
-                <div key={`active-${task.id}-${index}`} className="group relative">
-                  {isSearching && taskList && (
-                    <div className="absolute -top-2 left-9 px-1.5 py-0.5 bg-zinc-800 text-[10px] font-bold text-zinc-500 uppercase tracking-wider rounded border border-zinc-700 z-10">
-                      {taskList.name}
+            <Reorder.Group
+              axis="y"
+              values={activeTasks}
+              onReorder={(newOrder) => {
+                if (isSearching) return;
+                reorderTasks(newOrder);
+              }}
+              className="space-y-3"
+            >
+              {activeTasks.map((task) => {
+                const taskList = state.lists.find(l => l.id === task.listId);
+                return (
+                  <Reorder.Item
+                    key={task.id}
+                    value={task}
+                    dragListener={!isSearching}
+                    className={`group relative ${isSearching ? '' : 'cursor-grab active:cursor-grabbing'}`}
+                  >
+                    {isSearching && taskList && (
+                      <div className="absolute -top-2 left-9 px-1.5 py-0.5 bg-zinc-800 text-[10px] font-bold text-zinc-500 uppercase tracking-wider rounded border border-zinc-700 z-10">
+                        {taskList.name}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      {!isSearching && (
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity text-zinc-600 shrink-0">
+                          <GripVertical size={16} />
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <TaskItem task={task} />
+                      </div>
                     </div>
-                  )}
-                  <TaskItem task={task} />
-                </div>
-              );
-            })}
+                  </Reorder.Item>
+                );
+              })}
+            </Reorder.Group>
 
             {showCompleted && completedTasks.length > 0 && (
               <div className="pt-6">
                 <h3 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-3">
                   Completed
                 </h3>
-                <div className="space-y-3">
-                  {completedTasks.map((task, index) => {
+                <Reorder.Group
+                  axis="y"
+                  values={completedTasks}
+                  onReorder={(newOrder) => {
+                    if (isSearching) return;
+                    reorderTasks(newOrder);
+                  }}
+                  className="space-y-3"
+                >
+                  {completedTasks.map((task) => {
                     const taskList = state.lists.find(l => l.id === task.listId);
                     return (
-                      <div key={`completed-${task.id}-${index}`} className="group relative">
+                      <Reorder.Item
+                        key={task.id}
+                        value={task}
+                        dragListener={!isSearching}
+                        className={`group relative ${isSearching ? '' : 'cursor-grab active:cursor-grabbing'}`}
+                      >
                         {isSearching && taskList && (
                           <div className="absolute -top-2 left-9 px-1.5 py-0.5 bg-zinc-800 text-[10px] font-bold text-zinc-500 uppercase tracking-wider rounded border border-zinc-700 z-10">
                             {taskList.name}
                           </div>
                         )}
-                        <TaskItem task={task} />
-                      </div>
+                        <div className="flex items-center gap-2">
+                          {!isSearching && (
+                            <div className="opacity-0 group-hover:opacity-100 transition-opacity text-zinc-600 shrink-0">
+                              <GripVertical size={16} />
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <TaskItem task={task} />
+                          </div>
+                        </div>
+                      </Reorder.Item>
                     );
                   })}
-                </div>
+                </Reorder.Group>
               </div>
             )}
           </div>

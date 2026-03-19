@@ -1,15 +1,16 @@
 import { useState } from 'react';
-import { AppProvider } from './store';
+import { AppProvider, useAppStore } from './store';
 import { Sidebar } from './components/Sidebar';
 import { TaskListView } from './components/TaskListView';
 import { GeminiChat } from './components/GeminiChat';
 import { CalendarView } from './components/CalendarView';
-import { Menu } from 'lucide-react';
+import { Menu, WifiOff } from 'lucide-react';
 
 function AppContent() {
   const [activeListId, setActiveListId] = useState('inbox');
   const [isChatActive, setIsChatActive] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const { isOffline } = useAppStore();
 
   const renderContent = () => {
     if (isChatActive) return <GeminiChat />;
@@ -47,15 +48,31 @@ function AppContent() {
 
       <main className="flex-1 flex flex-col min-w-0 h-full relative">
         {/* Mobile Header */}
-        <div className="md:hidden flex items-center p-4 border-b border-zinc-800 bg-zinc-900">
-          <button 
-            onClick={() => setIsSidebarOpen(true)}
-            className="p-2 -ml-2 text-zinc-400 hover:text-zinc-100 rounded-lg hover:bg-zinc-800 transition-colors"
-          >
-            <Menu size={24} />
-          </button>
-          <h1 className="ml-2 text-lg font-bold tracking-tight">GTD Master</h1>
+        <div className="md:hidden flex items-center justify-between p-4 border-b border-zinc-800 bg-zinc-900">
+          <div className="flex items-center">
+            <button 
+              onClick={() => setIsSidebarOpen(true)}
+              className="p-2 -ml-2 text-zinc-400 hover:text-zinc-100 rounded-lg hover:bg-zinc-800 transition-colors"
+            >
+              <Menu size={24} />
+            </button>
+            <h1 className="ml-2 text-lg font-bold tracking-tight">GTD Master</h1>
+          </div>
+          {isOffline && (
+            <div className="flex items-center text-amber-500 text-xs font-medium">
+              <WifiOff size={14} className="mr-1" />
+              Offline
+            </div>
+          )}
         </div>
+
+        {/* Desktop Offline Indicator */}
+        {isOffline && (
+          <div className="hidden md:flex absolute top-4 right-4 z-10 items-center bg-amber-500/10 text-amber-500 px-3 py-1.5 rounded-full text-xs font-medium border border-amber-500/20">
+            <WifiOff size={14} className="mr-2" />
+            Working Offline
+          </div>
+        )}
 
         <div className="flex-1 overflow-hidden">
           {renderContent()}

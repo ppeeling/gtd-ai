@@ -23,6 +23,7 @@ export interface Task {
   reminderDate?: number; // timestamp
   timer: TaskTimer;
   createdAt: number;
+  order?: number;
 }
 
 export interface SavedPrompt {
