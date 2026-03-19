@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../store';
 import { TaskItem } from './TaskItem';
-import { Plus, Eye, EyeOff, Search, XCircle, GripVertical } from 'lucide-react';
-import { Reorder } from 'motion/react';
+import { Plus, Eye, EyeOff, Search, XCircle } from 'lucide-react';
 
 export function TaskListView({ listId }: { listId: string }) {
-  const { state, addTask, reorderTasks } = useAppStore();
+  const { state, addTask } = useAppStore();
   const [newTaskName, setNewTaskName] = useState('');
   const [showCompleted, setShowCompleted] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -92,7 +91,7 @@ export function TaskListView({ listId }: { listId: string }) {
             </form>
           )}
 
-          <div className="space-y-3">
+          <div className="space-y-3 pb-24">
             {activeTasks.length === 0 && completedTasks.length === 0 && (
               <div className="text-center py-12 text-zinc-500">
                 <p className="text-lg font-medium text-zinc-400">
@@ -102,86 +101,48 @@ export function TaskListView({ listId }: { listId: string }) {
               </div>
             )}
 
-            <Reorder.Group
-              axis="y"
-              values={activeTasks}
-              onReorder={(newOrder) => {
-                if (isSearching) return;
-                reorderTasks(newOrder);
-              }}
-              className="space-y-3"
-            >
+            <div className="space-y-3">
               {activeTasks.map((task) => {
                 const taskList = state.lists.find(l => l.id === task.listId);
                 return (
-                  <Reorder.Item
+                  <div
                     key={task.id}
-                    value={task}
-                    dragListener={!isSearching}
-                    className={`group relative ${isSearching ? '' : 'cursor-grab active:cursor-grabbing'}`}
+                    className="group relative"
                   >
                     {isSearching && taskList && (
                       <div className="absolute -top-2 left-9 px-1.5 py-0.5 bg-zinc-800 text-[10px] font-bold text-zinc-500 uppercase tracking-wider rounded border border-zinc-700 z-10">
                         {taskList.name}
                       </div>
                     )}
-                    <div className="flex items-center gap-2">
-                      {!isSearching && (
-                        <div className="opacity-0 group-hover:opacity-100 transition-opacity text-zinc-600 shrink-0">
-                          <GripVertical size={16} />
-                        </div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <TaskItem task={task} />
-                      </div>
-                    </div>
-                  </Reorder.Item>
+                    <TaskItem task={task} />
+                  </div>
                 );
               })}
-            </Reorder.Group>
+            </div>
 
             {showCompleted && completedTasks.length > 0 && (
               <div className="pt-6">
                 <h3 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-3">
                   Completed
                 </h3>
-                <Reorder.Group
-                  axis="y"
-                  values={completedTasks}
-                  onReorder={(newOrder) => {
-                    if (isSearching) return;
-                    reorderTasks(newOrder);
-                  }}
-                  className="space-y-3"
-                >
+                <div className="space-y-3">
                   {completedTasks.map((task) => {
                     const taskList = state.lists.find(l => l.id === task.listId);
                     return (
-                      <Reorder.Item
+                      <div
                         key={task.id}
-                        value={task}
-                        dragListener={!isSearching}
-                        className={`group relative ${isSearching ? '' : 'cursor-grab active:cursor-grabbing'}`}
+                        className="group relative"
                       >
                         {isSearching && taskList && (
                           <div className="absolute -top-2 left-9 px-1.5 py-0.5 bg-zinc-800 text-[10px] font-bold text-zinc-500 uppercase tracking-wider rounded border border-zinc-700 z-10">
                             {taskList.name}
                           </div>
                         )}
-                        <div className="flex items-center gap-2">
-                          {!isSearching && (
-                            <div className="opacity-0 group-hover:opacity-100 transition-opacity text-zinc-600 shrink-0">
-                              <GripVertical size={16} />
-                            </div>
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <TaskItem task={task} />
-                          </div>
-                        </div>
-                      </Reorder.Item>
+                        <TaskItem task={task} />
+                      </div>
                     );
                   })}
-                </Reorder.Group>
+                </div>
               </div>
             )}
           </div>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Task, List } from '../types';
 import { useAppStore } from '../store';
-import { Play, Square, RotateCcw, Calendar, Clock, MoreVertical, CheckCircle2, Circle, XCircle } from 'lucide-react';
+import { Play, Square, RotateCcw, Calendar, Clock, MoreVertical, CheckCircle2, Circle, XCircle, Trash2 } from 'lucide-react';
 
 export const TaskItem: React.FC<{ task: Task }> = ({ task }) => {
   const { updateTask, deleteTask, state } = useAppStore();
@@ -134,7 +134,14 @@ export const TaskItem: React.FC<{ task: Task }> = ({ task }) => {
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => deleteTask(task.id)}
+            className="p-1.5 text-zinc-500 hover:text-rose-400 hover:bg-zinc-800 rounded-md transition-colors"
+            title="Delete Task"
+          >
+            <Trash2 size={16} />
+          </button>
           <div className="relative" ref={menuRef}>
             <button
               onClick={() => setShowMenu(!showMenu)}
@@ -169,10 +176,10 @@ export const TaskItem: React.FC<{ task: Task }> = ({ task }) => {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 ml-9 mt-1">
-        <div className="flex items-center gap-4 text-xs text-zinc-500">
-          <div className="flex items-center gap-1.5 min-w-[100px]">
-            <Calendar size={14} />
+        <div className="flex flex-wrap items-center justify-between gap-3 ml-9 mt-1">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4 text-xs text-zinc-500">
+          <div className="flex items-center gap-1.5 min-w-[120px] group/date relative">
+            <Calendar size={14} className="shrink-0" />
             <input
               type="date"
               value={task.dueDate ? new Date(task.dueDate - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0] : ''}
@@ -181,11 +188,20 @@ export const TaskItem: React.FC<{ task: Task }> = ({ task }) => {
                 updateTask(task.id, { dueDate: date });
               }}
               onClick={(e) => (e.target as any).showPicker?.()}
-              className="bg-transparent border-none p-0 focus:ring-0 cursor-pointer hover:text-zinc-300 [color-scheme:dark] w-full min-h-[24px]"
+              className="bg-transparent border-none p-0 focus:ring-0 cursor-pointer hover:text-zinc-300 [color-scheme:dark] w-full min-h-[24px] pr-6"
             />
+            {task.dueDate && (
+              <button
+                onClick={() => updateTask(task.id, { dueDate: undefined })}
+                className="absolute right-0 p-1 text-zinc-600 hover:text-rose-400 transition-colors"
+                title="Clear due date"
+              >
+                <XCircle size={12} />
+              </button>
+            )}
           </div>
-          <div className="flex items-center gap-1.5 min-w-[140px]">
-            <Clock size={14} />
+          <div className="flex items-center gap-1.5 min-w-[160px] group/reminder relative">
+            <Clock size={14} className="shrink-0" />
             <input
               type="datetime-local"
               value={task.reminderDate ? new Date(task.reminderDate - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}
@@ -194,8 +210,17 @@ export const TaskItem: React.FC<{ task: Task }> = ({ task }) => {
                 updateTask(task.id, { reminderDate: date });
               }}
               onClick={(e) => (e.target as any).showPicker?.()}
-              className="bg-transparent border-none p-0 focus:ring-0 cursor-pointer hover:text-zinc-300 [color-scheme:dark] w-full min-h-[24px]"
+              className="bg-transparent border-none p-0 focus:ring-0 cursor-pointer hover:text-zinc-300 [color-scheme:dark] w-full min-h-[24px] pr-6"
             />
+            {task.reminderDate && (
+              <button
+                onClick={() => updateTask(task.id, { reminderDate: undefined })}
+                className="absolute right-0 p-1 text-zinc-600 hover:text-rose-400 transition-colors"
+                title="Clear reminder"
+              >
+                <XCircle size={12} />
+              </button>
+            )}
           </div>
         </div>
 

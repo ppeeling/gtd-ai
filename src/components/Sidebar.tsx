@@ -1,4 +1,4 @@
-import { Plus, List as ListIcon, Bot, Download, Upload, Trash2, X, GripVertical, Calendar as CalendarIcon } from 'lucide-react';
+import { Plus, List as ListIcon, Bot, Download, Upload, Trash2, X, GripVertical, Calendar as CalendarIcon, RotateCcw } from 'lucide-react';
 import { useAppStore } from '../store';
 import React, { useState, useRef } from 'react';
 import { Reorder } from 'motion/react';
@@ -174,6 +174,13 @@ export function Sidebar({
       </div>
 
       <div className="p-4 border-t border-zinc-800 flex flex-col gap-2">
+        <button
+          onClick={() => window.location.reload()}
+          className="flex items-center gap-2 text-sm text-zinc-400 hover:text-zinc-100 transition-colors"
+        >
+          <RotateCcw size={16} />
+          Refresh App
+        </button>
         <button
           onClick={handleExport}
           className="flex items-center gap-2 text-sm text-zinc-400 hover:text-zinc-100 transition-colors"

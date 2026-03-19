@@ -4,13 +4,17 @@ import { Sidebar } from './components/Sidebar';
 import { TaskListView } from './components/TaskListView';
 import { GeminiChat } from './components/GeminiChat';
 import { CalendarView } from './components/CalendarView';
-import { Menu, WifiOff } from 'lucide-react';
+import { Menu, WifiOff, RotateCcw } from 'lucide-react';
 
 function AppContent() {
   const [activeListId, setActiveListId] = useState('inbox');
   const [isChatActive, setIsChatActive] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const { isOffline } = useAppStore();
+
+  const handleRefresh = () => {
+    window.location.reload();
+  };
 
   const renderContent = () => {
     if (isChatActive) return <GeminiChat />;
@@ -19,7 +23,7 @@ function AppContent() {
   };
 
   return (
-    <div className="flex h-screen w-full bg-zinc-950 text-zinc-100 overflow-hidden font-sans">
+    <div className="flex h-[100dvh] w-full bg-zinc-950 text-zinc-100 overflow-hidden font-sans">
       {/* Mobile Sidebar Overlay */}
       {isSidebarOpen && (
         <div 
@@ -58,12 +62,21 @@ function AppContent() {
             </button>
             <h1 className="ml-2 text-lg font-bold tracking-tight">GTD Master</h1>
           </div>
-          {isOffline && (
-            <div className="flex items-center text-amber-500 text-xs font-medium">
-              <WifiOff size={14} className="mr-1" />
-              Offline
-            </div>
-          )}
+          <div className="flex items-center gap-3">
+            {isOffline && (
+              <div className="flex items-center text-amber-500 text-xs font-medium">
+                <WifiOff size={14} className="mr-1" />
+                Offline
+              </div>
+            )}
+            <button
+              onClick={handleRefresh}
+              className="p-2 text-zinc-400 hover:text-zinc-100 rounded-lg hover:bg-zinc-800 transition-colors"
+              aria-label="Refresh app"
+            >
+              <RotateCcw size={20} />
+            </button>
+          </div>
         </div>
 
         {/* Desktop Offline Indicator */}
