@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, RefreshCw, Server, ArrowRight, ArrowLeft } from 'lucide-react';
+import { Activity, RefreshCw, Server, ArrowRight, ArrowLeft, Terminal } from 'lucide-react';
 
 interface DnsPacket {
   timestamp: number;
@@ -23,6 +23,7 @@ interface DnsPacket {
 
 export function DnsTrafficView() {
   const [packets, setPackets] = useState<DnsPacket[]>([]);
+  const [logs, setLogs] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,6 +40,7 @@ export function DnsTrafficView() {
       if (!response.ok) throw new Error('Failed to fetch DNS traffic');
       const data = await response.json();
       setPackets(data.packets || []);
+      setLogs(data.logs || []);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -77,10 +79,26 @@ export function DnsTrafficView() {
         )}
 
         {packets.length === 0 && !isLoading && !error ? (
-          <div className="flex flex-col items-center justify-center h-64 text-zinc-500">
-            <Server size={48} className="mb-4 opacity-20" />
-            <p className="text-lg font-medium">No DNS packets found</p>
-            <p className="text-sm mt-2">Upload a gzipped PCAP file to /ingest/pcap to see traffic.</p>
+          <div className="flex flex-col gap-6">
+            <div className="flex flex-col items-center justify-center h-48 text-zinc-500 bg-zinc-900/50 rounded-xl border border-zinc-800/50">
+              <Server size={48} className="mb-4 opacity-20" />
+              <p className="text-lg font-medium">No DNS packets found</p>
+              <p className="text-sm mt-2">Upload a gzipped PCAP file to /ingest/pcap to see traffic.</p>
+            </div>
+            
+            {logs.length > 0 && (
+              <div className="bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden">
+                <div className="flex items-center gap-2 px-4 py-3 bg-zinc-900 border-b border-zinc-800">
+                  <Terminal size={16} className="text-zinc-400" />
+                  <h3 className="text-sm font-medium text-zinc-300">Parser Logs</h3>
+                </div>
+                <div className="p-4 font-mono text-xs text-zinc-400 h-64 overflow-y-auto space-y-1">
+                  {logs.map((log, i) => (
+                    <div key={i} className="break-all">{log}</div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">

@@ -13,6 +13,7 @@ import dnsPacket from "dns-packet";
 let db: Firestore | null = null;
 
 let lastDnsPackets: any[] = [];
+let lastPcapLogs: string[] = [];
 
 function getDb() {
   if (!db) {
@@ -155,29 +156,47 @@ app.post("/mcp/messages", async (req, res) => {
 // API Routes
 app.post("/ingest/pcap", (req, res) => {
   try {
+    lastPcapLogs = [];
+    const log = (msg: string) => {
+      const timestamp = new Date().toISOString();
+      const logMsg = `[${timestamp}] ${msg}`;
+      lastPcapLogs.push(logMsg);
+      console.log(logMsg);
+    };
+
+    log("Started receiving PCAP stream");
+
     const gunzip = zlib.createGunzip();
     req.pipe(gunzip);
 
     const parser = pcapp.parse(gunzip);
     const packets: any[] = [];
     let linkLayerType = 1;
+    let totalPackets = 0;
+    let skippedPackets = 0;
+    let parseErrors = 0;
 
     parser.on('globalHeader', (header: any) => {
       linkLayerType = header.network;
+      log(`Global header received. Link layer type: ${linkLayerType}`);
     });
 
     parser.on('packet', (packet: any) => {
+      totalPackets++;
+      if (totalPackets % 1000 === 0) {
+         log(`Processed ${totalPackets} packets...`);
+      }
       try {
         const buffer = packet.data;
         let offset = 0;
         let etherType = 0;
 
         if (linkLayerType === 1) { // Ethernet
-          if (buffer.length < 14) return;
+          if (buffer.length < 14) { skippedPackets++; return; }
           etherType = buffer.readUInt16BE(12);
           offset = 14;
         } else if (linkLayerType === 113) { // Linux SLL
-          if (buffer.length < 16) return;
+          if (buffer.length < 16) { skippedPackets++; return; }
           etherType = buffer.readUInt16BE(14);
           offset = 16;
         } else if (linkLayerType === 101 || linkLayerType === 12) { // Raw IP
@@ -185,15 +204,16 @@ app.post("/ingest/pcap", (req, res) => {
           const version = buffer[0] >> 4;
           if (version === 4) etherType = 0x0800;
           else if (version === 6) etherType = 0x86dd;
-          else return;
+          else { skippedPackets++; return; }
         } else if (linkLayerType === 0) { // Loopback
-          if (buffer.length < 4) return;
+          if (buffer.length < 4) { skippedPackets++; return; }
           const family = buffer.readUInt32LE(0);
           if (family === 2) etherType = 0x0800;
           else if (family === 24 || family === 28 || family === 30) etherType = 0x86dd;
-          else return;
+          else { skippedPackets++; return; }
           offset = 4;
         } else {
+          skippedPackets++;
           return;
         }
 
@@ -207,24 +227,25 @@ app.post("/ingest/pcap", (req, res) => {
         let dstIp = '';
 
         if (etherType === 0x0800) { // IPv4
-          if (buffer.length < offset + 20) return;
+          if (buffer.length < offset + 20) { skippedPackets++; return; }
           const ihl = buffer[offset] & 0x0F;
           protocol = buffer[offset + 9];
           srcIp = `${buffer[offset+12]}.${buffer[offset+13]}.${buffer[offset+14]}.${buffer[offset+15]}`;
           dstIp = `${buffer[offset+16]}.${buffer[offset+17]}.${buffer[offset+18]}.${buffer[offset+19]}`;
           offset += ihl * 4;
         } else if (etherType === 0x86DD) { // IPv6
-          if (buffer.length < offset + 40) return;
+          if (buffer.length < offset + 40) { skippedPackets++; return; }
           protocol = buffer[offset + 6];
           srcIp = buffer.slice(offset + 8, offset + 24).toString('hex').match(/.{1,4}/g)?.join(':') || '';
           dstIp = buffer.slice(offset + 24, offset + 40).toString('hex').match(/.{1,4}/g)?.join(':') || '';
           offset += 40;
         } else {
+          skippedPackets++;
           return;
         }
 
         if (protocol === 17) { // UDP
-          if (buffer.length < offset + 8) return;
+          if (buffer.length < offset + 8) { skippedPackets++; return; }
           const srcPort = buffer.readUInt16BE(offset);
           const dstPort = buffer.readUInt16BE(offset + 2);
           offset += 8;
@@ -240,26 +261,34 @@ app.post("/ingest/pcap", (req, res) => {
               dstPort,
               dns
             });
+          } else {
+            skippedPackets++;
           }
+        } else {
+          skippedPackets++;
         }
-      } catch (e) {
-        // Ignore parsing errors for individual packets
+      } catch (e: any) {
+        parseErrors++;
+        if (parseErrors <= 5) {
+          log(`Packet parse error (showing first 5): ${e.message}`);
+        }
       }
     });
 
     parser.on('end', () => {
+      log(`Finished parsing PCAP. Total packets: ${totalPackets}, Skipped: ${skippedPackets}, Parse errors: ${parseErrors}, DNS packets found: ${packets.length}`);
       lastDnsPackets = packets;
-      res.json({ success: true, count: packets.length });
+      res.json({ success: true, count: packets.length, logs: lastPcapLogs });
     });
 
     parser.on('error', (err: any) => {
-      console.error('PCAP parse error:', err);
-      res.status(400).json({ error: 'Failed to parse PCAP' });
+      log(`PCAP parser error: ${err.message}`);
+      res.status(400).json({ error: 'Failed to parse PCAP', logs: lastPcapLogs });
     });
 
     gunzip.on('error', (err: any) => {
-      console.error('Gunzip error:', err);
-      res.status(400).json({ error: 'Failed to decompress' });
+      log(`Gunzip error: ${err.message}`);
+      res.status(400).json({ error: 'Failed to decompress', logs: lastPcapLogs });
     });
 
   } catch (error: any) {
@@ -268,7 +297,7 @@ app.post("/ingest/pcap", (req, res) => {
 });
 
 app.get("/api/dns-traffic", (req, res) => {
-  res.json({ packets: lastDnsPackets });
+  res.json({ packets: lastDnsPackets, logs: lastPcapLogs });
 });
 
 app.get("/api/state", async (req, res) => {
