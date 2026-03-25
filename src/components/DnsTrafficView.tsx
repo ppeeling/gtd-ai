@@ -1,5 +1,20 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Activity, RefreshCw, Server, ArrowRight, ArrowLeft, Terminal, Search, Trash2, Filter, ArrowUpDown, Wifi, WifiOff, Download } from 'lucide-react';
+import { Activity, RefreshCw, Server, ArrowRight, ArrowLeft, Terminal, Search, Trash2, Filter, ArrowUpDown, Wifi, WifiOff, Download, ChevronDown, ChevronRight, Layers } from 'lucide-react';
+
+function getSLD(domain: string): string {
+  if (!domain) return 'Unknown';
+  const parts = domain.split('.');
+  if (parts.length <= 2) return domain;
+  
+  const tld = parts[parts.length - 1];
+  const sld = parts[parts.length - 2];
+  
+  if (tld.length === 2 && sld.length <= 3) {
+    return parts.slice(-3).join('.');
+  }
+  
+  return parts.slice(-2).join('.');
+}
 
 interface DnsPacket {
   timestamp: number;
@@ -30,6 +45,8 @@ export function DnsTrafficView() {
   const [filterType, setFilterType] = useState<'all' | 'query' | 'response' | 'truncated'>('all');
   const [sortConfig, setSortConfig] = useState<{ key: 'timestamp' | 'name'; direction: 'asc' | 'desc' }>({ key: 'timestamp', direction: 'desc' });
   const [isConnected, setIsConnected] = useState(false);
+  const [viewMode, setViewMode] = useState<'grouped' | 'flat'>('grouped');
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const passcode = localStorage.getItem('gtd-passcode');
@@ -126,6 +143,119 @@ export function DnsTrafficView() {
     }));
   };
 
+  const groupedPackets = useMemo(() => {
+    if (viewMode !== 'grouped') return [];
+    
+    const groups = new Map<string, {
+      sld: string;
+      packets: DnsPacket[];
+      firstTimestamp: number;
+      lastTimestamp: number;
+      count: number;
+    }>();
+
+    filteredAndSortedPackets.forEach(pkt => {
+      const domain = pkt.dns.questions?.[0]?.name || 'Unknown';
+      const sld = getSLD(domain);
+      
+      if (!groups.has(sld)) {
+        groups.set(sld, {
+          sld,
+          packets: [],
+          firstTimestamp: pkt.timestamp,
+          lastTimestamp: pkt.timestamp,
+          count: 0
+        });
+      }
+      
+      const group = groups.get(sld)!;
+      group.packets.push(pkt);
+      group.count++;
+      if (pkt.timestamp < group.firstTimestamp) group.firstTimestamp = pkt.timestamp;
+      if (pkt.timestamp > group.lastTimestamp) group.lastTimestamp = pkt.timestamp;
+    });
+
+    return Array.from(groups.values()).sort((a, b) => {
+      if (sortConfig.key === 'timestamp') {
+        return sortConfig.direction === 'asc' ? a.firstTimestamp - b.firstTimestamp : b.firstTimestamp - a.firstTimestamp;
+      } else if (sortConfig.key === 'name') {
+        return sortConfig.direction === 'asc' ? a.sld.localeCompare(b.sld) : b.sld.localeCompare(a.sld);
+      }
+      return 0;
+    });
+  }, [filteredAndSortedPackets, viewMode, sortConfig]);
+
+  const toggleGroup = (sld: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(sld)) {
+        next.delete(sld);
+      } else {
+        next.add(sld);
+      }
+      return next;
+    });
+  };
+
+  const renderPacketRow = (pkt: DnsPacket, idx: number, isIndented: boolean = false) => {
+    const isQuery = pkt.dns.type === 'query';
+    const queryName = pkt.dns.questions?.[0]?.name || 'N/A';
+    const queryType = pkt.dns.questions?.[0]?.type || 'N/A';
+    const answers = pkt.dns.answers?.map(a => a.data).join(', ') || '';
+    const isTruncated = pkt.dns._truncated;
+    const errorMessage = pkt.dns._error;
+
+    return (
+      <tr key={`${pkt.timestamp}-${idx}`} className={`hover:bg-zinc-800/50 transition-colors group ${isIndented ? 'bg-zinc-950/30' : ''}`}>
+        <td className={`px-4 py-3 whitespace-nowrap text-zinc-400 font-mono text-[10px] ${isIndented ? 'pl-8' : ''}`}>
+          {new Date(pkt.timestamp).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+          <span className="text-zinc-600 ml-1">.{String(pkt.timestamp % 1000).padStart(3, '0')}</span>
+        </td>
+        <td className="px-4 py-3 whitespace-nowrap font-mono text-xs">
+          <span className="text-zinc-500">{pkt.srcIp}</span>
+          <span className="text-zinc-600">:{pkt.srcPort}</span>
+        </td>
+        <td className="px-4 py-3 whitespace-nowrap font-mono text-xs">
+          <span className="text-zinc-500">{pkt.dstIp}</span>
+          <span className="text-zinc-600">:{pkt.dstPort}</span>
+        </td>
+        <td className="px-4 py-3 whitespace-nowrap">
+          {isTruncated ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-500/10 text-amber-500 border border-amber-500/20">
+              Truncated
+            </span>
+          ) : (
+            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${isQuery ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}>
+              {isQuery ? <ArrowRight size={10} /> : <ArrowLeft size={10} />}
+              {isQuery ? 'Query' : 'Response'}
+            </span>
+          )}
+        </td>
+        <td className="px-4 py-3 whitespace-nowrap font-medium text-zinc-200">
+          {isTruncated ? (
+            <span className="text-amber-500/70 text-xs italic">Decode Failed</span>
+          ) : (
+            <div className="flex flex-col">
+              <span className="text-sm truncate max-w-[200px]" title={queryName}>{queryName}</span>
+              <span className="text-[10px] text-zinc-500 font-mono">{queryType}</span>
+            </div>
+          )}
+        </td>
+        <td className="px-4 py-3 text-zinc-400 text-xs truncate max-w-xs" title={isTruncated ? errorMessage : (answers || pkt.dns.rcode)}>
+          {isTruncated ? (
+            <span className="text-rose-500/70">{errorMessage}</span>
+          ) : (
+            isQuery ? (
+              <span className="text-zinc-600 italic">Pending...</span>
+            ) : (
+              <span className="text-zinc-300">{answers || `RCODE: ${pkt.dns.rcode}`}</span>
+            )
+          )}
+        </td>
+      </tr>
+    );
+  };
+
   const clearTraffic = () => {
     setPackets([]);
     setLogs([]);
@@ -190,6 +320,23 @@ export function DnsTrafficView() {
             />
           </div>
           <div className="flex items-center gap-2">
+            <div className="flex bg-zinc-950 border border-zinc-800 rounded-lg p-1">
+              <button
+                onClick={() => setViewMode('grouped')}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-medium transition-all ${viewMode === 'grouped' ? 'bg-indigo-600 text-white shadow-lg' : 'text-zinc-500 hover:text-zinc-300'}`}
+              >
+                <Layers size={14} />
+                Grouped
+              </button>
+              <button
+                onClick={() => setViewMode('flat')}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-medium transition-all ${viewMode === 'flat' ? 'bg-indigo-600 text-white shadow-lg' : 'text-zinc-500 hover:text-zinc-300'}`}
+              >
+                <Activity size={14} />
+                Flat
+              </button>
+            </div>
+            <div className="w-px h-6 bg-zinc-800 mx-1"></div>
             <div className="flex bg-zinc-950 border border-zinc-800 rounded-lg p-1">
               {(['all', 'query', 'response', 'truncated'] as const).map((type) => (
                 <button
@@ -258,64 +405,37 @@ export function DnsTrafficView() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-800">
-                    {filteredAndSortedPackets.map((pkt, idx) => {
-                      const isQuery = pkt.dns.type === 'query';
-                      const queryName = pkt.dns.questions?.[0]?.name || 'N/A';
-                      const queryType = pkt.dns.questions?.[0]?.type || 'N/A';
-                      const answers = pkt.dns.answers?.map(a => a.data).join(', ') || '';
-                      const isTruncated = pkt.dns._truncated;
-                      const errorMessage = pkt.dns._error;
-
-                      return (
-                        <tr key={`${pkt.timestamp}-${idx}`} className="hover:bg-zinc-800/50 transition-colors group">
-                          <td className="px-4 py-3 whitespace-nowrap text-zinc-400 font-mono text-[10px]">
-                            {new Date(pkt.timestamp).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                            <span className="text-zinc-600 ml-1">.{String(pkt.timestamp % 1000).padStart(3, '0')}</span>
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap font-mono text-xs">
-                            <span className="text-zinc-500">{pkt.srcIp}</span>
-                            <span className="text-zinc-600">:{pkt.srcPort}</span>
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap font-mono text-xs">
-                            <span className="text-zinc-500">{pkt.dstIp}</span>
-                            <span className="text-zinc-600">:{pkt.dstPort}</span>
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap">
-                            {isTruncated ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-500/10 text-amber-500 border border-amber-500/20">
-                                Truncated
-                              </span>
-                            ) : (
-                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${isQuery ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}>
-                                {isQuery ? <ArrowRight size={10} /> : <ArrowLeft size={10} />}
-                                {isQuery ? 'Query' : 'Response'}
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap font-medium text-zinc-200">
-                            {isTruncated ? (
-                              <span className="text-amber-500/70 text-xs italic">Decode Failed</span>
-                            ) : (
-                              <div className="flex flex-col">
-                                <span className="text-sm truncate max-w-[200px]" title={queryName}>{queryName}</span>
-                                <span className="text-[10px] text-zinc-500 font-mono">{queryType}</span>
+                    {viewMode === 'grouped' ? (
+                      groupedPackets.map(group => (
+                        <React.Fragment key={group.sld}>
+                          <tr 
+                            className="bg-zinc-900/80 hover:bg-zinc-800 transition-colors cursor-pointer border-y border-zinc-800/50"
+                            onClick={() => toggleGroup(group.sld)}
+                          >
+                            <td className="px-4 py-3 whitespace-nowrap text-zinc-400 font-mono text-[10px]">
+                              {new Date(group.firstTimestamp).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                              {' - '}
+                              {new Date(group.lastTimestamp).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                            </td>
+                            <td colSpan={3} className="px-4 py-3 whitespace-nowrap font-medium text-zinc-200">
+                              <div className="flex items-center gap-2">
+                                {expandedGroups.has(group.sld) ? <ChevronDown size={14} className="text-zinc-500" /> : <ChevronRight size={14} className="text-zinc-500" />}
+                                <span className="text-indigo-400 font-bold">{group.sld}</span>
                               </div>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-zinc-400 text-xs truncate max-w-xs" title={isTruncated ? errorMessage : (answers || pkt.dns.rcode)}>
-                            {isTruncated ? (
-                              <span className="text-rose-500/70">{errorMessage}</span>
-                            ) : (
-                              isQuery ? (
-                                <span className="text-zinc-600 italic">Pending...</span>
-                              ) : (
-                                <span className="text-zinc-300">{answers || `RCODE: ${pkt.dns.rcode}`}</span>
-                              )
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-zinc-400 text-xs">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 font-medium">
+                                {group.count} packet{group.count !== 1 ? 's' : ''}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3"></td>
+                          </tr>
+                          {expandedGroups.has(group.sld) && group.packets.map((pkt, idx) => renderPacketRow(pkt, idx, true))}
+                        </React.Fragment>
+                      ))
+                    ) : (
+                      filteredAndSortedPackets.map((pkt, idx) => renderPacketRow(pkt, idx, false))
+                    )}
                   </tbody>
                 </table>
               </div>
