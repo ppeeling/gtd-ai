@@ -205,11 +205,11 @@ app.post("/ingest/pcap", (req, res) => {
           if (version === 4) etherType = 0x0800;
           else if (version === 6) etherType = 0x86dd;
           else { skippedPackets++; return; }
-        } else if (linkLayerType === 0) { // Loopback
+        } else if (linkLayerType === 0 || linkLayerType === 108) { // Loopback
           if (buffer.length < 4) { skippedPackets++; return; }
           const family = buffer.readUInt32LE(0);
-          if (family === 2) etherType = 0x0800;
-          else if (family === 24 || family === 28 || family === 30) etherType = 0x86dd;
+          if (family === 2 || family === 0x02000000 || buffer[0] === 0x45) etherType = 0x0800;
+          else if (family === 24 || family === 28 || family === 30 || family === 0x1c000000 || family === 0x18000000 || family === 0x1e000000 || (buffer[0] >> 4) === 6) etherType = 0x86dd;
           else { skippedPackets++; return; }
           offset = 4;
         } else {
@@ -248,10 +248,11 @@ app.post("/ingest/pcap", (req, res) => {
           if (buffer.length < offset + 8) { skippedPackets++; return; }
           const srcPort = buffer.readUInt16BE(offset);
           const dstPort = buffer.readUInt16BE(offset + 2);
+          const udpLength = buffer.readUInt16BE(offset + 4);
           offset += 8;
 
-          if (srcPort === 53 || dstPort === 53) {
-            const dnsPayload = buffer.slice(offset);
+          if (srcPort === 53 || dstPort === 53 || srcPort === 5353 || dstPort === 5353) {
+            const dnsPayload = buffer.slice(offset, offset + udpLength - 8);
             const dns = dnsPacket.decode(dnsPayload);
             packets.push({
               timestamp: packet.header.timestampSeconds * 1000 + Math.floor(packet.header.timestampMicroseconds / 1000),
