@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Activity, RefreshCw, Server, ArrowRight, ArrowLeft, Terminal, Search, Trash2, Filter, ArrowUpDown, Wifi, WifiOff } from 'lucide-react';
+import { Activity, RefreshCw, Server, ArrowRight, ArrowLeft, Terminal, Search, Trash2, Filter, ArrowUpDown, Wifi, WifiOff, Download } from 'lucide-react';
 
 interface DnsPacket {
   timestamp: number;
@@ -110,6 +110,20 @@ export function DnsTrafficView() {
     setLogs([]);
   };
 
+  const downloadTraffic = () => {
+    if (packets.length === 0) return;
+    const dataStr = JSON.stringify(filteredAndSortedPackets, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `dns-traffic-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="flex-1 flex flex-col h-full bg-zinc-950">
       <div className="px-4 md:px-8 py-6 border-b border-zinc-800 bg-zinc-900 flex flex-col gap-4">
@@ -125,6 +139,14 @@ export function DnsTrafficView() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={downloadTraffic}
+              disabled={packets.length === 0}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-white rounded-lg transition-colors"
+            >
+              <Download size={16} />
+              Download
+            </button>
             <button
               onClick={clearTraffic}
               className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg transition-colors"
