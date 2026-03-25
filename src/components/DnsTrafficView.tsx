@@ -120,6 +120,8 @@ export function DnsTrafficView() {
                     const queryName = pkt.dns.questions?.[0]?.name || 'N/A';
                     const queryType = pkt.dns.questions?.[0]?.type || 'N/A';
                     const answers = pkt.dns.answers?.map(a => a.data).join(', ') || '';
+                    const isTruncated = (pkt.dns as any)._truncated;
+                    const errorMessage = (pkt.dns as any)._error;
 
                     return (
                       <tr key={idx} className="hover:bg-zinc-800/50 transition-colors">
@@ -133,16 +135,22 @@ export function DnsTrafficView() {
                           {pkt.dstIp}:{pkt.dstPort}
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${isQuery ? 'bg-blue-500/10 text-blue-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
-                            {isQuery ? <ArrowRight size={12} /> : <ArrowLeft size={12} />}
-                            {isQuery ? 'Query' : 'Response'}
-                          </span>
+                          {isTruncated ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-amber-500/10 text-amber-400">
+                              Truncated
+                            </span>
+                          ) : (
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${isQuery ? 'bg-blue-500/10 text-blue-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
+                              {isQuery ? <ArrowRight size={12} /> : <ArrowLeft size={12} />}
+                              {isQuery ? 'Query' : 'Response'}
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap font-medium text-zinc-200">
-                          {queryName} <span className="text-zinc-500 text-xs">({queryType})</span>
+                          {isTruncated ? <span className="text-amber-500/70 text-xs">Decode Failed</span> : <>{queryName} <span className="text-zinc-500 text-xs">({queryType})</span></>}
                         </td>
-                        <td className="px-4 py-3 text-zinc-400 truncate max-w-xs" title={answers || pkt.dns.rcode}>
-                          {isQuery ? '-' : (answers || `RCODE: ${pkt.dns.rcode}`)}
+                        <td className="px-4 py-3 text-zinc-400 truncate max-w-xs" title={isTruncated ? errorMessage : (answers || pkt.dns.rcode)}>
+                          {isTruncated ? <span className="text-amber-500/70 text-xs">{errorMessage}</span> : (isQuery ? '-' : (answers || `RCODE: ${pkt.dns.rcode}`))}
                         </td>
                       </tr>
                     );

@@ -177,7 +177,7 @@ app.post("/ingest/pcap", (req, res) => {
     let parseErrors = 0;
 
     parser.on('globalHeader', (header: any) => {
-      linkLayerType = header.network;
+      linkLayerType = header.linkLayerType;
       log(`Global header received. Link layer type: ${linkLayerType}`);
     });
 
@@ -253,7 +253,24 @@ app.post("/ingest/pcap", (req, res) => {
 
           if (srcPort === 53 || dstPort === 53 || srcPort === 5353 || dstPort === 5353) {
             const dnsPayload = buffer.slice(offset, offset + udpLength - 8);
-            const dns = dnsPacket.decode(dnsPayload);
+            let dns = null;
+            try {
+              dns = dnsPacket.decode(dnsPayload);
+            } catch (e: any) {
+              log(`Failed to decode DNS packet (likely truncated): ${e.message}`);
+              // We still push the packet but with dns = null or a placeholder
+              dns = {
+                id: 0,
+                type: 'response',
+                flags: 0,
+                questions: [],
+                answers: [],
+                authorities: [],
+                additionals: [],
+                _truncated: true,
+                _error: e.message
+              };
+            }
             packets.push({
               timestamp: packet.header.timestampSeconds * 1000 + Math.floor(packet.header.timestampMicroseconds / 1000),
               srcIp,
