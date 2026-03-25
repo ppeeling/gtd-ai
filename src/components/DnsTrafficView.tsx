@@ -32,62 +32,53 @@ export function DnsTrafficView() {
   const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const passcode = localStorage.getItem('gtd-passcode');
-    const wsUrl = `${protocol}//${window.location.host}/api/ws${passcode ? `?passcode=${encodeURIComponent(passcode)}` : ''}`;
-    console.log('[WS] Connecting to:', wsUrl.split('?')[0]); // Log without passcode
-    
-    const ws = new WebSocket(wsUrl);
-    let connectionTimeout: NodeJS.Timeout;
+    let lastPacketId = 0;
+    let lastLogId = 0;
+    let isPolling = true;
 
-    ws.onopen = () => {
-      console.log('[WS] Connected');
-      setIsConnected(true);
-      clearTimeout(connectionTimeout);
-    };
+    const poll = async () => {
+      if (!isPolling) return;
 
-    ws.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'connected') {
-          console.log('[WS] Received connection confirmation');
-          setIsConnected(true);
-          clearTimeout(connectionTimeout);
-        } else if (data.type === 'packet') {
-          setPackets(prev => [data.packet, ...prev].slice(0, 2000));
-        } else if (data.type === 'log') {
-          setLogs(prev => [data.log, ...prev].slice(0, 500));
+        const url = `/api/dns-poll?lastPacketId=${lastPacketId}&lastLogId=${lastLogId}${passcode ? `&passcode=${encodeURIComponent(passcode)}` : ''}`;
+        const response = await fetch(url);
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (!isConnected) setIsConnected(true);
+          
+          if (data.packets && data.packets.length > 0) {
+            setPackets(prev => [...data.packets.reverse(), ...prev].slice(0, 2000));
+          }
+          if (data.logs && data.logs.length > 0) {
+            setLogs(prev => [...data.logs.reverse(), ...prev].slice(0, 500));
+          }
+          
+          lastPacketId = data.lastPacketId;
+          lastLogId = data.lastLogId;
+        } else if (response.status === 401) {
+          console.error('[Poll] Authentication failed');
+          setIsConnected(false);
+          isPolling = false; // Stop polling on auth failure
+          return;
+        } else {
+          setIsConnected(false);
         }
       } catch (e) {
-        console.error('Failed to parse WS message', e);
-      }
-    };
-
-    ws.onerror = (error) => {
-      console.error('[WS] Connection error:', error);
-      setIsConnected(false);
-      clearTimeout(connectionTimeout);
-    };
-
-    ws.onclose = (event) => {
-      console.log('[WS] Connection closed', event.code, event.reason);
-      setIsConnected(false);
-      clearTimeout(connectionTimeout);
-    };
-
-    // Timeout if connection hangs
-    connectionTimeout = setTimeout(() => {
-      if (ws.readyState === WebSocket.CONNECTING) {
-        console.warn('[WS] Connection timed out (hanging in CONNECTING state).');
-        ws.close();
+        console.error('[Poll] Fetch error:', e);
         setIsConnected(false);
       }
-    }, 10000);
+
+      if (isPolling) {
+        setTimeout(poll, 2000); // Poll every 2 seconds
+      }
+    };
+
+    poll();
 
     return () => {
-      console.log('[WS] Closing connection');
-      clearTimeout(connectionTimeout);
-      ws.close();
+      isPolling = false;
     };
   }, []);
 

@@ -48,6 +48,8 @@ const wss = new WebSocketServer({ noServer: true });
 server.on('upgrade', (request, socket, head) => {
   const url = new URL(request.url!, `http://${request.headers.host}`);
   
+  console.log(`[WS] Global upgrade request received for URL: ${request.url}, Pathname: ${url.pathname}`);
+
   if (url.pathname === '/api/ws') {
     const passcode = url.searchParams.get('passcode');
     const configuredPasscode = process.env.APP_PASSCODE;
@@ -71,14 +73,34 @@ server.on('upgrade', (request, socket, head) => {
     wss.handleUpgrade(request, socket, head, (ws) => {
       wss.emit('connection', ws, request);
     });
+  } else {
+    console.log(`[WS] Unhandled upgrade request for ${url.pathname}`);
+    socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+    socket.destroy();
   }
 });
 
 const clients = new Set<express.Response>();
 
+// In-memory storage for polling fallback
+const recentPackets: any[] = [];
+const recentLogs: any[] = [];
+let packetIdCounter = 0;
+let logIdCounter = 0;
+const MAX_PACKETS = 2000;
+const MAX_LOGS = 500;
+
 function broadcast(data: any) {
   const message = JSON.stringify(data);
   
+  if (data.type === 'packet') {
+    recentPackets.push({ id: ++packetIdCounter, packet: data.packet });
+    if (recentPackets.length > MAX_PACKETS) recentPackets.shift();
+  } else if (data.type === 'log') {
+    recentLogs.push({ id: ++logIdCounter, log: data.log });
+    if (recentLogs.length > MAX_LOGS) recentLogs.shift();
+  }
+
   // Broadcast to WebSocket clients
   wss.clients.forEach(client => {
     if (client.readyState === WebSocket.OPEN) {
@@ -91,6 +113,22 @@ function broadcast(data: any) {
     client.write(`data: ${message}\n\n`);
   });
 }
+
+// Polling Endpoint for DNS Traffic (Fallback for environments that don't support streaming)
+app.get('/api/dns-poll', (req, res) => {
+  const lastPacketId = parseInt(req.query.lastPacketId as string) || 0;
+  const lastLogId = parseInt(req.query.lastLogId as string) || 0;
+  
+  const newPackets = recentPackets.filter(p => p.id > lastPacketId);
+  const newLogs = recentLogs.filter(l => l.id > lastLogId);
+  
+  res.json({
+    packets: newPackets.map(p => p.packet),
+    logs: newLogs.map(l => l.log),
+    lastPacketId: newPackets.length > 0 ? newPackets[newPackets.length - 1].id : lastPacketId,
+    lastLogId: newLogs.length > 0 ? newLogs[newLogs.length - 1].id : lastLogId
+  });
+});
 
 // Authentication Middleware
 app.use(['/api', '/mcp', '/ingest'], (req, res, next) => {
@@ -143,6 +181,12 @@ app.get('/api/dns-stream', (req, res) => {
     clearInterval(keepAlive);
     clients.delete(res);
   });
+});
+
+// Debug route to catch downgraded WebSocket requests
+app.get('/api/ws', (req, res) => {
+  console.log('[WS-DEBUG] Received normal GET request to /api/ws. The proxy is stripping the Upgrade header!');
+  res.status(400).send('Expected a WebSocket connection, but received a normal HTTP GET request. The proxy is likely stripping the Upgrade header.');
 });
 
 // MCP Server Setup
