@@ -47,18 +47,21 @@ const wss = new WebSocketServer({ noServer: true });
 
 server.on('upgrade', (request, socket, head) => {
   const url = new URL(request.url!, `http://${request.headers.host}`);
-  const passcode = url.searchParams.get('passcode');
-  const configuredPasscode = process.env.APP_PASSCODE;
+  
+  if (url.pathname === '/api/ws') {
+    const passcode = url.searchParams.get('passcode');
+    const configuredPasscode = process.env.APP_PASSCODE;
 
-  if (configuredPasscode && passcode !== configuredPasscode) {
-    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-    socket.destroy();
-    return;
+    if (configuredPasscode && passcode !== configuredPasscode) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      wss.emit('connection', ws, request);
+    });
   }
-
-  wss.handleUpgrade(request, socket, head, (ws) => {
-    wss.emit('connection', ws, request);
-  });
 });
 
 function broadcast(data: any) {

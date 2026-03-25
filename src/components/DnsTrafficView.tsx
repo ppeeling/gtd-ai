@@ -33,8 +33,8 @@ export function DnsTrafficView() {
 
   useEffect(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const passcode = localStorage.getItem('app_passcode');
-    const wsUrl = `${protocol}//${window.location.host}${passcode ? `?passcode=${encodeURIComponent(passcode)}` : ''}`;
+    const passcode = localStorage.getItem('gtd-passcode');
+    const wsUrl = `${protocol}//${window.location.host}/api/ws${passcode ? `?passcode=${encodeURIComponent(passcode)}` : ''}`;
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
