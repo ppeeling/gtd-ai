@@ -9,11 +9,10 @@ import { z } from "zod";
 import zlib from "zlib";
 import pcapp from "pcap-parser";
 import dnsPacket from "dns-packet";
+import http from "http";
+import { WebSocketServer, WebSocket } from "ws";
 
 let db: Firestore | null = null;
-
-let lastDnsPackets: any[] = [];
-let lastPcapLogs: string[] = [];
 
 function getDb() {
   if (!db) {
@@ -42,6 +41,33 @@ function getDb() {
 const app = express();
 app.use(express.json({ limit: '50mb' }));
 const PORT = 3000;
+
+const server = http.createServer(app);
+const wss = new WebSocketServer({ noServer: true });
+
+server.on('upgrade', (request, socket, head) => {
+  const url = new URL(request.url!, `http://${request.headers.host}`);
+  const passcode = url.searchParams.get('passcode');
+  const configuredPasscode = process.env.APP_PASSCODE;
+
+  if (configuredPasscode && passcode !== configuredPasscode) {
+    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+
+  wss.handleUpgrade(request, socket, head, (ws) => {
+    wss.emit('connection', ws, request);
+  });
+});
+
+function broadcast(data: any) {
+  wss.clients.forEach(client => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(JSON.stringify(data));
+    }
+  });
+}
 
 // Authentication Middleware
 app.use(['/api', '/mcp', '/ingest'], (req, res, next) => {
@@ -156,11 +182,10 @@ app.post("/mcp/messages", async (req, res) => {
 // API Routes
 app.post("/ingest/pcap", (req, res) => {
   try {
-    lastPcapLogs = [];
     const log = (msg: string) => {
       const timestamp = new Date().toISOString();
       const logMsg = `[${timestamp}] ${msg}`;
-      lastPcapLogs.push(logMsg);
+      broadcast({ type: 'log', log: logMsg });
       console.log(logMsg);
     };
 
@@ -170,11 +195,11 @@ app.post("/ingest/pcap", (req, res) => {
     req.pipe(gunzip);
 
     const parser = pcapp.parse(gunzip);
-    const packets: any[] = [];
     let linkLayerType = 1;
     let totalPackets = 0;
     let skippedPackets = 0;
     let parseErrors = 0;
+    let dnsPacketsFound = 0;
 
     parser.on('globalHeader', (header: any) => {
       linkLayerType = header.linkLayerType;
@@ -271,13 +296,17 @@ app.post("/ingest/pcap", (req, res) => {
                 _error: e.message
               };
             }
-            packets.push({
-              timestamp: packet.header.timestampSeconds * 1000 + Math.floor(packet.header.timestampMicroseconds / 1000),
-              srcIp,
-              dstIp,
-              srcPort,
-              dstPort,
-              dns
+            dnsPacketsFound++;
+            broadcast({
+              type: 'packet',
+              packet: {
+                timestamp: packet.header.timestampSeconds * 1000 + Math.floor(packet.header.timestampMicroseconds / 1000),
+                srcIp,
+                dstIp,
+                srcPort,
+                dstPort,
+                dns
+              }
             });
           } else {
             skippedPackets++;
@@ -294,19 +323,18 @@ app.post("/ingest/pcap", (req, res) => {
     });
 
     parser.on('end', () => {
-      log(`Finished parsing PCAP. Total packets: ${totalPackets}, Skipped: ${skippedPackets}, Parse errors: ${parseErrors}, DNS packets found: ${packets.length}`);
-      lastDnsPackets = packets;
-      res.json({ success: true, count: packets.length, logs: lastPcapLogs });
+      log(`Finished parsing PCAP. Total packets: ${totalPackets}, Skipped: ${skippedPackets}, Parse errors: ${parseErrors}, DNS packets found: ${dnsPacketsFound}`);
+      res.json({ success: true, count: dnsPacketsFound });
     });
 
     parser.on('error', (err: any) => {
       log(`PCAP parser error: ${err.message}`);
-      res.status(400).json({ error: 'Failed to parse PCAP', logs: lastPcapLogs });
+      res.status(400).json({ error: 'Failed to parse PCAP' });
     });
 
     gunzip.on('error', (err: any) => {
       log(`Gunzip error: ${err.message}`);
-      res.status(400).json({ error: 'Failed to decompress', logs: lastPcapLogs });
+      res.status(400).json({ error: 'Failed to decompress' });
     });
 
   } catch (error: any) {
@@ -315,7 +343,7 @@ app.post("/ingest/pcap", (req, res) => {
 });
 
 app.get("/api/dns-traffic", (req, res) => {
-  res.json({ packets: lastDnsPackets, logs: lastPcapLogs });
+  res.json({ packets: [], logs: [] });
 });
 
 app.get("/api/state", async (req, res) => {
@@ -530,7 +558,7 @@ async function startServer() {
     app.use(express.static("dist"));
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  server.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }
