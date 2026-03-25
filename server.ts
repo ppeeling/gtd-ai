@@ -92,20 +92,6 @@ function broadcast(data: any) {
   });
 }
 
-// SSE Endpoint for DNS Traffic
-app.get('/api/dns-stream', (req, res) => {
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.flushHeaders();
-
-  clients.add(res);
-
-  req.on('close', () => {
-    clients.delete(res);
-  });
-});
-
 // Authentication Middleware
 app.use(['/api', '/mcp', '/ingest'], (req, res, next) => {
   const configuredPasscode = process.env.APP_PASSCODE;
@@ -120,11 +106,43 @@ app.use(['/api', '/mcp', '/ingest'], (req, res, next) => {
     return next();
   }
   
-  if (queryPasscode === configuredPasscode) {
+  // Check both decoded and raw
+  const isMatch = queryPasscode === configuredPasscode || 
+                  encodeURIComponent(queryPasscode || '') === configuredPasscode ||
+                  queryPasscode === decodeURIComponent(configuredPasscode);
+
+  if (isMatch) {
     return next();
   }
   
   return res.status(401).json({ error: 'Unauthorized' });
+});
+
+// SSE Endpoint for DNS Traffic
+app.get('/api/dns-stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  // Disable Nginx/proxy buffering
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  // Send initial connection message with 2KB of padding to force App Engine/proxies to flush the buffer
+  const padding = ' '.repeat(2048);
+  res.write(`:${padding}\n\n`);
+  res.write(`data: ${JSON.stringify({ type: 'connected' })}\n\n`);
+
+  clients.add(res);
+
+  // Send keep-alive pings every 15 seconds to prevent proxy timeouts
+  const keepAlive = setInterval(() => {
+    res.write(': keepalive\n\n');
+  }, 15000);
+
+  req.on('close', () => {
+    clearInterval(keepAlive);
+    clients.delete(res);
+  });
 });
 
 // MCP Server Setup
