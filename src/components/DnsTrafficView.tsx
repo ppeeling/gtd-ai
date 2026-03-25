@@ -32,16 +32,15 @@ export function DnsTrafficView() {
   const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const passcode = localStorage.getItem('gtd-passcode');
-    const wsUrl = `${protocol}//${window.location.host}/api/ws${passcode ? `?passcode=${encodeURIComponent(passcode)}` : ''}`;
-    const ws = new WebSocket(wsUrl);
+    const sseUrl = `/api/dns-stream${passcode ? `?passcode=${encodeURIComponent(passcode)}` : ''}`;
+    const eventSource = new EventSource(sseUrl);
 
-    ws.onopen = () => {
+    eventSource.onopen = () => {
       setIsConnected(true);
     };
 
-    ws.onmessage = (event) => {
+    eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
         if (data.type === 'packet') {
@@ -50,15 +49,15 @@ export function DnsTrafficView() {
           setLogs(prev => [data.log, ...prev].slice(0, 500));
         }
       } catch (e) {
-        console.error('Failed to parse WS message', e);
+        console.error('Failed to parse SSE message', e);
       }
     };
 
-    ws.onclose = () => {
+    eventSource.onerror = () => {
       setIsConnected(false);
     };
 
-    return () => ws.close();
+    return () => eventSource.close();
   }, []);
 
   const filteredAndSortedPackets = useMemo(() => {

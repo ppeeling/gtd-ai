@@ -52,7 +52,17 @@ server.on('upgrade', (request, socket, head) => {
     const passcode = url.searchParams.get('passcode');
     const configuredPasscode = process.env.APP_PASSCODE;
 
-    if (configuredPasscode && passcode !== configuredPasscode) {
+    console.log(`[WS] Upgrade request. Provided passcode: ${passcode}, Configured: ${configuredPasscode}`);
+
+    // Check both decoded and raw (in case configuredPasscode is URL-encoded)
+    const isMatch = configuredPasscode && (
+      passcode === configuredPasscode || 
+      encodeURIComponent(passcode || '') === configuredPasscode ||
+      passcode === decodeURIComponent(configuredPasscode)
+    );
+
+    if (configuredPasscode && !isMatch) {
+      console.log('[WS] Rejecting connection: Passcode mismatch');
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
       return;
@@ -64,13 +74,37 @@ server.on('upgrade', (request, socket, head) => {
   }
 });
 
+const clients = new Set<express.Response>();
+
 function broadcast(data: any) {
+  const message = JSON.stringify(data);
+  
+  // Broadcast to WebSocket clients
   wss.clients.forEach(client => {
     if (client.readyState === WebSocket.OPEN) {
-      client.send(JSON.stringify(data));
+      client.send(message);
     }
   });
+
+  // Broadcast to SSE clients
+  clients.forEach(client => {
+    client.write(`data: ${message}\n\n`);
+  });
 }
+
+// SSE Endpoint for DNS Traffic
+app.get('/api/dns-stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  clients.add(res);
+
+  req.on('close', () => {
+    clients.delete(res);
+  });
+});
 
 // Authentication Middleware
 app.use(['/api', '/mcp', '/ingest'], (req, res, next) => {
@@ -78,11 +112,19 @@ app.use(['/api', '/mcp', '/ingest'], (req, res, next) => {
   if (!configuredPasscode) {
     return next();
   }
+  
   const authHeader = req.headers.authorization;
-  if (!authHeader || authHeader !== `Bearer ${configuredPasscode}`) {
-    return res.status(401).json({ error: 'Unauthorized' });
+  const queryPasscode = req.query.passcode as string;
+  
+  if (authHeader === `Bearer ${configuredPasscode}`) {
+    return next();
   }
-  next();
+  
+  if (queryPasscode === configuredPasscode) {
+    return next();
+  }
+  
+  return res.status(401).json({ error: 'Unauthorized' });
 });
 
 // MCP Server Setup
