@@ -32,24 +32,25 @@ export function DnsTrafficView() {
   const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const passcode = localStorage.getItem('gtd-passcode');
-    const sseUrl = `/api/dns-stream${passcode ? `?passcode=${encodeURIComponent(passcode)}` : ''}`;
-    console.log('[SSE] Connecting to:', sseUrl.split('?')[0]); // Log without passcode
+    const wsUrl = `${protocol}//${window.location.host}/api/ws${passcode ? `?passcode=${encodeURIComponent(passcode)}` : ''}`;
+    console.log('[WS] Connecting to:', wsUrl.split('?')[0]); // Log without passcode
     
-    const eventSource = new EventSource(sseUrl);
+    const ws = new WebSocket(wsUrl);
     let connectionTimeout: NodeJS.Timeout;
 
-    eventSource.onopen = () => {
-      console.log('[SSE] Connected');
+    ws.onopen = () => {
+      console.log('[WS] Connected');
       setIsConnected(true);
       clearTimeout(connectionTimeout);
     };
 
-    eventSource.onmessage = (event) => {
+    ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
         if (data.type === 'connected') {
-          console.log('[SSE] Received connection confirmation');
+          console.log('[WS] Received connection confirmation');
           setIsConnected(true);
           clearTimeout(connectionTimeout);
         } else if (data.type === 'packet') {
@@ -58,35 +59,35 @@ export function DnsTrafficView() {
           setLogs(prev => [data.log, ...prev].slice(0, 500));
         }
       } catch (e) {
-        console.error('Failed to parse SSE message', e);
+        console.error('Failed to parse WS message', e);
       }
     };
 
-    eventSource.onerror = (error) => {
-      console.error('[SSE] Connection error:', error);
+    ws.onerror = (error) => {
+      console.error('[WS] Connection error:', error);
       setIsConnected(false);
       clearTimeout(connectionTimeout);
-      
-      // EventSource auto-reconnects by default, but if it's completely closed (readyState 2),
-      // we might need to handle it. Usually, we just let the browser handle it.
-      if (eventSource.readyState === EventSource.CLOSED) {
-        console.log('[SSE] Connection closed permanently by server');
-      }
     };
 
-    // Timeout if connection hangs (e.g., due to proxy buffering)
+    ws.onclose = (event) => {
+      console.log('[WS] Connection closed', event.code, event.reason);
+      setIsConnected(false);
+      clearTimeout(connectionTimeout);
+    };
+
+    // Timeout if connection hangs
     connectionTimeout = setTimeout(() => {
-      if (eventSource.readyState === EventSource.CONNECTING) {
-        console.warn('[SSE] Connection timed out (hanging in CONNECTING state). Check proxy buffering.');
-        eventSource.close();
+      if (ws.readyState === WebSocket.CONNECTING) {
+        console.warn('[WS] Connection timed out (hanging in CONNECTING state).');
+        ws.close();
         setIsConnected(false);
       }
     }, 10000);
 
     return () => {
-      console.log('[SSE] Closing connection');
+      console.log('[WS] Closing connection');
       clearTimeout(connectionTimeout);
-      eventSource.close();
+      ws.close();
     };
   }, []);
 
