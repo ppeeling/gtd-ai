@@ -51,11 +51,13 @@ export function DnsTrafficView() {
   const [packets, setPackets] = useState<DnsPacket[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState<'all' | 'query' | 'response' | 'truncated'>('all');
+  const [filterType, setFilterType] = useState<'all' | 'query' | 'response' | 'https' | 'quic' | 'truncated'>('all');
   const [sortConfig, setSortConfig] = useState<{ key: 'timestamp' | 'name'; direction: 'asc' | 'desc' }>({ key: 'timestamp', direction: 'desc' });
   const [isConnected, setIsConnected] = useState(false);
   const [viewMode, setViewMode] = useState<'grouped' | 'flat'>('grouped');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [hideIpDomains, setHideIpDomains] = useState(true);
+  const [isLogsExpanded, setIsLogsExpanded] = useState(false);
 
   useEffect(() => {
     const passcode = localStorage.getItem('gtd-passcode');
@@ -124,10 +126,24 @@ export function DnsTrafficView() {
     if (filterType !== 'all') {
       result = result.filter(p => {
         const isTruncated = p.dns._truncated;
+        const isHttps = p.dns._is_https;
+        const queryType = p.dns.questions?.[0]?.type;
+        
         if (filterType === 'truncated') return isTruncated;
-        if (filterType === 'query') return p.dns.type === 'query' && !isTruncated;
-        if (filterType === 'response') return p.dns.type === 'response' && !isTruncated;
+        if (filterType === 'query') return p.dns.type === 'query' && !isTruncated && !isHttps;
+        if (filterType === 'response') return p.dns.type === 'response' && !isTruncated && !isHttps;
+        if (filterType === 'https') return isHttps && queryType === 'HTTPS';
+        if (filterType === 'quic') return isHttps && queryType === 'QUIC';
         return true;
+      });
+    }
+
+    if (hideIpDomains) {
+      result = result.filter(p => {
+        const domain = p.dns.questions?.[0]?.name || '';
+        const sld = getSLD(domain);
+        const isIp = /^\d+\.\d+\.\d+\.\d+$/.test(sld) || sld.includes(':');
+        return !isIp;
       });
     }
 
@@ -355,7 +371,7 @@ export function DnsTrafficView() {
             </div>
             <div className="w-px h-6 bg-zinc-800 mx-1"></div>
             <div className="flex bg-zinc-950 border border-zinc-800 rounded-lg p-1">
-              {(['all', 'query', 'response', 'truncated'] as const).map((type) => (
+              {(['all', 'query', 'response', 'https', 'quic', 'truncated'] as const).map((type) => (
                 <button
                   key={type}
                   onClick={() => setFilterType(type)}
@@ -365,6 +381,14 @@ export function DnsTrafficView() {
                 </button>
               ))}
             </div>
+            <div className="w-px h-6 bg-zinc-800 mx-1"></div>
+            <button
+              onClick={() => setHideIpDomains(!hideIpDomains)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${hideIpDomains ? 'bg-indigo-600/10 text-indigo-400 border-indigo-500/20' : 'bg-zinc-950 text-zinc-500 border-zinc-800 hover:text-zinc-300'}`}
+            >
+              <Filter size={14} />
+              Hide IPs
+            </button>
           </div>
         </div>
       </div>
@@ -380,15 +404,24 @@ export function DnsTrafficView() {
             
             {logs.length > 0 && (
               <div className="bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden">
-                <div className="flex items-center gap-2 px-4 py-3 bg-zinc-900 border-b border-zinc-800">
-                  <Terminal size={16} className="text-zinc-400" />
-                  <h3 className="text-sm font-medium text-zinc-300">Parser Logs</h3>
+                <div 
+                  className="flex items-center justify-between px-4 py-3 bg-zinc-900 border-b border-zinc-800 cursor-pointer hover:bg-zinc-800/80 transition-colors"
+                  onClick={() => setIsLogsExpanded(!isLogsExpanded)}
+                >
+                  <div className="flex items-center gap-2">
+                    <Terminal size={16} className="text-zinc-400" />
+                    <h3 className="text-sm font-medium text-zinc-300">Parser Logs</h3>
+                    <span className="text-xs text-zinc-500 bg-zinc-800 px-2 py-0.5 rounded-full">{logs.length}</span>
+                  </div>
+                  {isLogsExpanded ? <ChevronDown size={16} className="text-zinc-500" /> : <ChevronRight size={16} className="text-zinc-500" />}
                 </div>
-                <div className="p-4 font-mono text-xs text-zinc-400 h-64 overflow-y-auto space-y-1">
-                  {logs.map((log, i) => (
-                    <div key={i} className="break-all">{log}</div>
-                  ))}
-                </div>
+                {isLogsExpanded && (
+                  <div className="p-4 font-mono text-xs text-zinc-400 h-64 overflow-y-auto space-y-1">
+                    {logs.map((log, i) => (
+                      <div key={i} className="break-all">{log}</div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -459,16 +492,25 @@ export function DnsTrafficView() {
             </div>
 
             {logs.length > 0 && (
-              <div className="bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden">
-                <div className="flex items-center gap-2 px-4 py-3 bg-zinc-900 border-b border-zinc-800">
-                  <Terminal size={16} className="text-zinc-400" />
-                  <h3 className="text-sm font-medium text-zinc-300">Parser Logs</h3>
+              <div className="bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden mt-6">
+                <div 
+                  className="flex items-center justify-between px-4 py-3 bg-zinc-900 border-b border-zinc-800 cursor-pointer hover:bg-zinc-800/80 transition-colors"
+                  onClick={() => setIsLogsExpanded(!isLogsExpanded)}
+                >
+                  <div className="flex items-center gap-2">
+                    <Terminal size={16} className="text-zinc-400" />
+                    <h3 className="text-sm font-medium text-zinc-300">Parser Logs</h3>
+                    <span className="text-xs text-zinc-500 bg-zinc-800 px-2 py-0.5 rounded-full">{logs.length}</span>
+                  </div>
+                  {isLogsExpanded ? <ChevronDown size={16} className="text-zinc-500" /> : <ChevronRight size={16} className="text-zinc-500" />}
                 </div>
-                <div className="p-4 font-mono text-xs text-zinc-400 h-48 overflow-y-auto space-y-1 scrollbar-thin scrollbar-thumb-zinc-800">
-                  {logs.map((log, i) => (
-                    <div key={i} className="break-all border-l border-zinc-800 pl-2 py-0.5">{log}</div>
-                  ))}
-                </div>
+                {isLogsExpanded && (
+                  <div className="p-4 font-mono text-xs text-zinc-400 h-48 overflow-y-auto space-y-1 scrollbar-thin scrollbar-thumb-zinc-800">
+                    {logs.map((log, i) => (
+                      <div key={i} className="break-all border-l border-zinc-800 pl-2 py-0.5">{log}</div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
