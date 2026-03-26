@@ -90,6 +90,8 @@ let logIdCounter = 0;
 const MAX_PACKETS = 2000;
 const MAX_LOGS = 500;
 
+const ipToDomain = new Map<string, string>();
+
 function broadcast(data: any) {
   const message = JSON.stringify(data);
   
@@ -286,6 +288,61 @@ app.post("/mcp/messages", async (req, res) => {
   }
 });
 
+function extractSNI(buffer: Buffer, offset: number): string | null {
+  try {
+    // Basic TLS Client Hello check
+    // Content Type: 0x16 (Handshake)
+    // Handshake Type: 0x01 (Client Hello)
+    if (buffer.length < offset + 43) return null;
+    if (buffer[offset] !== 0x16) return null;
+    if (buffer[offset + 5] !== 0x01) return null;
+
+    let pos = offset + 43; // Skip header, version, random
+    if (pos >= buffer.length) return null;
+
+    // Session ID
+    const sessionIdLen = buffer[pos];
+    pos += 1 + sessionIdLen;
+    if (pos + 2 >= buffer.length) return null;
+
+    // Cipher Suites
+    const cipherSuitesLen = buffer.readUInt16BE(pos);
+    pos += 2 + cipherSuitesLen;
+    if (pos + 1 >= buffer.length) return null;
+
+    // Compression Methods
+    const compressionMethodsLen = buffer[pos];
+    pos += 1 + compressionMethodsLen;
+    if (pos + 2 >= buffer.length) return null;
+
+    // Extensions
+    if (pos + 2 > buffer.length) return null;
+    const extensionsLen = buffer.readUInt16BE(pos);
+    pos += 2;
+    const extensionsEnd = pos + extensionsLen;
+
+    while (pos + 4 <= extensionsEnd && pos + 4 <= buffer.length) {
+      const extType = buffer.readUInt16BE(pos);
+      const extLen = buffer.readUInt16BE(pos + 2);
+      pos += 4;
+
+      if (extType === 0x0000) { // Server Name Extension
+        if (pos + 5 > buffer.length) return null;
+        const nameType = buffer[pos + 2];
+        const nameLen = buffer.readUInt16BE(pos + 3);
+        if (nameType === 0x00) { // Host Name
+          if (pos + 5 + nameLen > buffer.length) return null;
+          return buffer.slice(pos + 5, pos + 5 + nameLen).toString('utf8');
+        }
+      }
+      pos += extLen;
+    }
+  } catch (e) {
+    // Ignore errors
+  }
+  return null;
+}
+
 // API Routes
 app.post("/ingest/pcap", (req, res) => {
   try {
@@ -390,7 +447,6 @@ app.post("/ingest/pcap", (req, res) => {
               dns = dnsPacket.decode(dnsPayload);
             } catch (e: any) {
               log(`Failed to decode DNS packet (likely truncated): ${e.message}`);
-              // We still push the packet but with dns = null or a placeholder
               dns = {
                 id: 0,
                 type: 'response',
@@ -404,6 +460,16 @@ app.post("/ingest/pcap", (req, res) => {
               };
             }
             dnsPacketsFound++;
+
+            // Correlate IPs with domains from DNS responses
+            if (dns && dns.type === 'response' && dns.answers) {
+              dns.answers.forEach((answer: any) => {
+                if ((answer.type === 'A' || answer.type === 'AAAA') && answer.data) {
+                  ipToDomain.set(answer.data, answer.name);
+                }
+              });
+            }
+
             broadcast({
               type: 'packet',
               packet: {
@@ -413,6 +479,57 @@ app.post("/ingest/pcap", (req, res) => {
                 srcPort,
                 dstPort,
                 dns
+              }
+            });
+          } else if (srcPort === 443 || dstPort === 443) {
+            // QUIC or other UDP 443 traffic
+            // We can't easily extract SNI from QUIC without full parsing, but we can report it
+            const correlatedDomain = ipToDomain.get(dstIp) || ipToDomain.get(srcIp);
+            broadcast({
+              type: 'packet',
+              packet: {
+                timestamp: packet.header.timestampSeconds * 1000 + Math.floor(packet.header.timestampMicroseconds / 1000),
+                srcIp,
+                dstIp,
+                srcPort,
+                dstPort,
+                dns: {
+                  type: 'query',
+                  questions: [{ name: correlatedDomain ? `QUIC:${correlatedDomain}` : `QUIC:${dstIp}`, type: 'QUIC', class: 'IN' }],
+                  answers: [],
+                  _is_https: true
+                }
+              }
+            });
+          } else {
+            skippedPackets++;
+          }
+        } else if (protocol === 6) { // TCP
+          if (buffer.length < offset + 20) { skippedPackets++; return; }
+          const srcPort = buffer.readUInt16BE(offset);
+          const dstPort = buffer.readUInt16BE(offset + 2);
+          const dataOffset = (buffer[offset + 12] >> 4) * 4;
+          offset += dataOffset;
+
+          if (srcPort === 443 || dstPort === 443) {
+            const sni = extractSNI(buffer, offset);
+            const correlatedDomain = ipToDomain.get(dstIp) || ipToDomain.get(srcIp);
+            const name = sni || correlatedDomain || `HTTPS:${dstIp}`;
+            
+            broadcast({
+              type: 'packet',
+              packet: {
+                timestamp: packet.header.timestampSeconds * 1000 + Math.floor(packet.header.timestampMicroseconds / 1000),
+                srcIp,
+                dstIp,
+                srcPort,
+                dstPort,
+                dns: {
+                  type: 'query',
+                  questions: [{ name: name.startsWith('HTTPS:') ? name : (sni ? name : `HTTPS:${name}`), type: 'HTTPS', class: 'IN' }],
+                  answers: [],
+                  _is_https: true
+                }
               }
             });
           } else {

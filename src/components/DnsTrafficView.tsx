@@ -3,8 +3,16 @@ import { Activity, RefreshCw, Server, ArrowRight, ArrowLeft, Terminal, Search, T
 
 function getSLD(domain: string): string {
   if (!domain) return 'Unknown';
-  const parts = domain.split('.');
-  if (parts.length <= 2) return domain;
+  // Strip prefixes
+  const cleanDomain = domain.replace(/^(HTTPS:|QUIC:)/, '');
+  
+  // If it's an IP address, return it as is
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(cleanDomain) || cleanDomain.includes(':')) {
+    return cleanDomain;
+  }
+
+  const parts = cleanDomain.split('.');
+  if (parts.length <= 2) return cleanDomain;
   
   const tld = parts[parts.length - 1];
   const sld = parts[parts.length - 2];
@@ -35,6 +43,7 @@ interface DnsPacket {
     additionals: Array<any>;
     _truncated?: boolean;
     _error?: string;
+    _is_https?: boolean;
   };
 }
 
@@ -204,6 +213,7 @@ export function DnsTrafficView() {
     const answers = pkt.dns.answers?.map(a => a.data).join(', ') || '';
     const isTruncated = pkt.dns._truncated;
     const errorMessage = pkt.dns._error;
+    const isHttps = pkt.dns._is_https;
 
     return (
       <tr key={`${pkt.timestamp}-${idx}`} className={`hover:bg-zinc-800/50 transition-colors group ${isIndented ? 'bg-zinc-950/30' : ''}`}>
@@ -223,6 +233,11 @@ export function DnsTrafficView() {
           {isTruncated ? (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-500/10 text-amber-500 border border-amber-500/20">
               Truncated
+            </span>
+          ) : isHttps ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-violet-500/10 text-violet-400 border border-violet-500/20">
+              <RefreshCw size={10} />
+              {queryType}
             </span>
           ) : (
             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${isQuery ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}>
@@ -244,6 +259,8 @@ export function DnsTrafficView() {
         <td className="px-4 py-3 text-zinc-400 text-xs truncate max-w-xs" title={isTruncated ? errorMessage : (answers || pkt.dns.rcode)}>
           {isTruncated ? (
             <span className="text-rose-500/70">{errorMessage}</span>
+          ) : isHttps ? (
+            <span className="text-zinc-500 italic">Encrypted Payload</span>
           ) : (
             isQuery ? (
               <span className="text-zinc-600 italic">Pending...</span>
