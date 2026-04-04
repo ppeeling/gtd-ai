@@ -55,4 +55,9 @@ jobs:
       - name: Deploy to App Engine
         uses: google-github-actions/deploy-appengine@v2
         with:
+          project_id: moonlit-cistern-90110
           deliverables: app.yaml
+
+      - name: Clean up old versions
+        run: |
+          gcloud app versions list --project=moonlit-cistern-90110 --service=default --filter="traffic_split=0" --format="value(id)" | xargs -r gcloud app versions delete --project=moonlit-cistern-90110 --service=default --quiet
