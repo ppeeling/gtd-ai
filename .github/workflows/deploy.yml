@@ -1,0 +1,58 @@
+name: Deploy to Google App Engine
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Inject Secrets into app.yaml
+        uses: actions/github-script@v7
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          FIREBASE_PRIVATE_KEY: ${{ secrets.FIREBASE_PRIVATE_KEY }}
+          APP_PASSCODE: ${{ secrets.APP_PASSCODE }}
+        with:
+          script: |
+            const fs = require('fs');
+            let appYaml = fs.readFileSync('app.yaml', 'utf8');
+            
+            if (process.env.GEMINI_API_KEY) {
+              appYaml = appYaml.replace('GEMINI_API_KEY: ""', `GEMINI_API_KEY: ${JSON.stringify(process.env.GEMINI_API_KEY)}`);
+            }
+            if (process.env.FIREBASE_PRIVATE_KEY) {
+              appYaml = appYaml.replace('FIREBASE_PRIVATE_KEY: ""', `FIREBASE_PRIVATE_KEY: ${JSON.stringify(process.env.FIREBASE_PRIVATE_KEY)}`);
+            }
+            if (process.env.APP_PASSCODE) {
+              appYaml = appYaml.replace('APP_PASSCODE: ""', `APP_PASSCODE: ${JSON.stringify(process.env.APP_PASSCODE)}`);
+            }
+            
+            fs.writeFileSync('app.yaml', appYaml);
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+
+      - name: Deploy to App Engine
+        uses: google-github-actions/deploy-appengine@v2
+        with:
+          deliverables: app.yaml

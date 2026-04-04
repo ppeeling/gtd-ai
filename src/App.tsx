@@ -4,7 +4,6 @@ import { Sidebar } from './components/Sidebar';
 import { TaskListView } from './components/TaskListView';
 import { GeminiChat } from './components/GeminiChat';
 import { CalendarView } from './components/CalendarView';
-import { DnsTrafficView } from './components/DnsTrafficView';
 import { Menu, WifiOff, RotateCcw } from 'lucide-react';
 
 function AppContent() {
@@ -20,7 +19,6 @@ function AppContent() {
   const renderContent = () => {
     if (isChatActive) return <GeminiChat />;
     if (activeListId === '__calendar__') return <CalendarView />;
-    if (activeListId === '__dns_traffic__') return <DnsTrafficView />;
     return <TaskListView listId={activeListId} />;
   };
 
