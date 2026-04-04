@@ -9,12 +9,14 @@ export function Sidebar({
   isChatActive,
   setIsChatActive,
   onClose,
+  onRefresh,
 }: {
   activeListId: string;
   setActiveListId: (id: string) => void;
   isChatActive: boolean;
   setIsChatActive: (active: boolean) => void;
   onClose?: () => void;
+  onRefresh?: () => void;
 }) {
   const { state, addList, deleteList, reorderLists, exportData, importData } = useAppStore();
   const [newListName, setNewListName] = useState('');
@@ -175,7 +177,13 @@ export function Sidebar({
 
       <div className="p-4 border-t border-zinc-800 flex flex-col gap-2">
         <button
-          onClick={() => window.location.reload()}
+          onClick={() => {
+            if (onRefresh) {
+              onRefresh();
+            } else {
+              window.location.reload();
+            }
+          }}
           className="flex items-center gap-2 text-sm text-zinc-400 hover:text-zinc-100 transition-colors"
         >
           <RotateCcw size={16} />

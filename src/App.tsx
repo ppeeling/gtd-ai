@@ -12,7 +12,27 @@ function AppContent() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const { isOffline } = useAppStore();
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
+    if ('serviceWorker' in navigator) {
+      try {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const registration of registrations) {
+          await registration.unregister();
+        }
+      } catch (e) {
+        console.error('Error unregistering service workers', e);
+      }
+    }
+    if ('caches' in window) {
+      try {
+        const keys = await caches.keys();
+        for (const key of keys) {
+          await caches.delete(key);
+        }
+      } catch (e) {
+        console.error('Error clearing caches', e);
+      }
+    }
     window.location.reload();
   };
 
@@ -47,6 +67,7 @@ function AppContent() {
             setIsSidebarOpen(false);
           }}
           onClose={() => setIsSidebarOpen(false)}
+          onRefresh={handleRefresh}
         />
       </div>
 
