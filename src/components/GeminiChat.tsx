@@ -1,15 +1,17 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAppStore } from '../store';
 import { GoogleGenAI } from '@google/genai';
-import { Send, Save, Trash2, Bot, User, Loader2 } from 'lucide-react';
+import { Send, Save, Trash2, Bot, User, Loader2, Key } from 'lucide-react';
 
 export function GeminiChat() {
-  const { state, savePrompt, deletePrompt } = useAppStore();
+  const { state, savePrompt, deletePrompt, geminiApiKey, setGeminiApiKey } = useAppStore();
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<{ role: 'user' | 'model'; text: string }[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [promptName, setPromptName] = useState('');
   const [showSavePrompt, setShowSavePrompt] = useState(false);
+  const [showSettings, setShowSettings] = useState(!geminiApiKey);
+  const [tempApiKey, setTempApiKey] = useState(geminiApiKey);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -31,7 +33,7 @@ export function GeminiChat() {
     setIsLoading(true);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const ai = new GoogleGenAI({ apiKey: geminiApiKey });
       const systemInstruction = `You are a helpful GTD (Getting Things Done) assistant.
 Here is the user's current GTD state in JSON format:
 ${JSON.stringify({ lists: state.lists, tasks: state.tasks }, null, 2)}
@@ -72,12 +74,67 @@ Answer the user's questions based on this state. Be concise, helpful, and format
     }
   };
 
+  const handleSaveSettings = () => {
+    setGeminiApiKey(tempApiKey.trim());
+    setShowSettings(false);
+  };
+
+  if (showSettings) {
+    return (
+      <div className="flex-1 flex flex-col h-full bg-zinc-950 items-center justify-center p-8">
+        <div className="max-w-md w-full bg-zinc-900 p-8 rounded-2xl shadow-sm border border-zinc-800">
+          <div className="w-12 h-12 bg-indigo-500/20 text-indigo-400 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Key size={24} />
+          </div>
+          <h2 className="text-2xl font-bold text-zinc-100 mb-2 text-center">API Configuration</h2>
+          <p className="text-zinc-400 mb-6 text-sm text-center">
+            Enter your Gemini API key to use the AI Assistant. Your key is stored locally in your browser and never sent to our servers.
+          </p>
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-zinc-300 mb-2">Gemini API Key</label>
+            <input
+              type="password"
+              value={tempApiKey}
+              onChange={(e) => setTempApiKey(e.target.value)}
+              placeholder="AIzaSy..."
+              className="w-full px-4 py-3 bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+          <div className="flex gap-3">
+            {geminiApiKey && (
+              <button
+                onClick={() => setShowSettings(false)}
+                className="flex-1 py-3 bg-zinc-800 text-zinc-300 rounded-xl font-medium hover:bg-zinc-700 transition-colors"
+              >
+                Cancel
+              </button>
+            )}
+            <button
+              onClick={handleSaveSettings}
+              disabled={!tempApiKey.trim()}
+              className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50"
+            >
+              Save Key
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex-1 flex flex-col h-full bg-zinc-950">
       <div className="px-4 md:px-8 py-6 border-b border-zinc-800 bg-zinc-900 flex items-center justify-between">
         <h2 className="text-2xl font-bold text-zinc-100 tracking-tight flex items-center gap-2">
           <Bot className="text-indigo-600" /> AI Assistant
         </h2>
+        <button
+          onClick={() => setShowSettings(true)}
+          className="text-sm text-zinc-400 hover:text-zinc-100 transition-colors flex items-center gap-1"
+        >
+          <Key size={16} />
+          API Key
+        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-8 flex flex-col gap-4">
