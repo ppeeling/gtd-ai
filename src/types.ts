@@ -32,30 +32,24 @@ export interface SavedPrompt {
   prompt: string;
 }
 
+export interface NewsTopic {
+  id: string;
+  name: string;
+  lastGeneratedAt: number | null;
+}
+
+export interface GeneratedArticle {
+  id: string;
+  topicId: string;
+  title: string;
+  content: string;
+  generatedAt: number;
+}
+
 export interface AppState {
   lists: List[];
   tasks: Task[];
   savedPrompts: SavedPrompt[];
-  rssPreferences: RssPreferences;
-  rssArticles: RssArticle[];
-}
-
-export interface RssArticle {
-  id: string;
-  title: string;
-  link: string;
-  pubDate: string;
-  pubTimestamp?: number;
-  description: string;
-  content?: string;
-  topics?: string[];
-  feedTitles?: string[];
-}
-
-export interface RssPreferences {
-  likedArticles: string[];
-  dislikedArticles: string[];
-  followedTopics: string[];
-  playedArticles: string[];
-  hiddenArticles: string[];
+  newsTopics: NewsTopic[];
+  generatedArticles: GeneratedArticle[];
 }

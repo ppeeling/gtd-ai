@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { AppState, List, SavedPrompt, Task, RssPreferences, RssArticle } from './types';
+import { AppState, List, SavedPrompt, Task, NewsTopic, GeneratedArticle } from './types';
 import { LogIn, WifiOff } from 'lucide-react';
 import { auth, db, googleProvider, signInWithPopup } from './firebase';
 import { collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch, query, orderBy, limit } from 'firebase/firestore';
@@ -9,14 +9,11 @@ const defaultState: AppState = {
   lists: [],
   tasks: [],
   savedPrompts: [],
-  rssPreferences: {
-    likedArticles: [],
-    dislikedArticles: [],
-    followedTopics: [],
-    playedArticles: [],
-    hiddenArticles: [],
-  },
-  rssArticles: [],
+  newsTopics: [
+    { id: 'epl', name: 'English Premier League', lastGeneratedAt: null },
+    { id: 'boro', name: 'Middlesbrough FC', lastGeneratedAt: null }
+  ],
+  generatedArticles: [],
 };
 
 interface AppContextType {
@@ -36,8 +33,9 @@ interface AppContextType {
   isOffline: boolean;
   geminiApiKey: string;
   setGeminiApiKey: (key: string) => void;
-  updateRssPreferences: (updates: Partial<RssPreferences>) => void;
-  upsertRssArticles: (articles: RssArticle[]) => Promise<void>;
+  upsertNewsTopic: (topic: NewsTopic) => Promise<void>;
+  deleteNewsTopic: (id: string) => Promise<void>;
+  upsertGeneratedArticle: (article: GeneratedArticle) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -98,26 +96,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setState(s => ({ ...s, savedPrompts: prompts }));
     }, (error) => console.error(error));
 
-    const unsubRssPrefs = onSnapshot(doc(db, 'preferences', 'rss'), (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setState(s => ({ 
-          ...s, 
-          rssPreferences: { 
-            likedArticles: data.likedArticles || [],
-            dislikedArticles: data.dislikedArticles || [],
-            followedTopics: data.followedTopics || [],
-            playedArticles: data.playedArticles || [],
-            hiddenArticles: data.hiddenArticles || []
-          } 
-        }));
-      }
+    const unsubNewsTopics = onSnapshot(collection(db, 'news_topics'), (snapshot) => {
+      const topics = snapshot.docs.map(doc => doc.data() as NewsTopic);
+      setState(s => ({ ...s, newsTopics: topics }));
     }, (error) => console.error(error));
 
-    const qRss = query(collection(db, 'rss_articles'), orderBy('pubTimestamp', 'desc'), limit(300));
-    const unsubRssArticles = onSnapshot(qRss, (snapshot) => {
-      const articles = snapshot.docs.map(doc => doc.data() as RssArticle);
-      setState(s => ({ ...s, rssArticles: articles }));
+    const unsubGeneratedArticles = onSnapshot(collection(db, 'generated_articles'), (snapshot) => {
+      const articles = snapshot.docs.map(doc => doc.data() as GeneratedArticle);
+      setState(s => ({ ...s, generatedArticles: articles }));
     }, (error) => console.error(error));
 
     setIsLoaded(true);
@@ -126,8 +112,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       unsubTasks();
       unsubLists();
       unsubPrompts();
-      unsubRssPrefs();
-      unsubRssArticles();
+      unsubNewsTopics();
+      unsubGeneratedArticles();
     };
   }, [user, isAuthReady]);
 
@@ -215,26 +201,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await deleteDoc(doc(db, 'saved_prompts', id));
   };
 
-  const updateRssPreferences = async (updates: Partial<RssPreferences>) => {
-    setState(s => ({ ...s, rssPreferences: { ...s.rssPreferences, ...updates } }));
-    await setDoc(doc(db, 'preferences', 'rss'), updates, { merge: true });
+  const upsertNewsTopic = async (topic: NewsTopic) => {
+    setState(s => {
+      const exists = s.newsTopics.some(t => t.id === topic.id);
+      if (exists) {
+        return { ...s, newsTopics: s.newsTopics.map(t => t.id === topic.id ? topic : t) };
+      }
+      return { ...s, newsTopics: [...s.newsTopics, topic] };
+    });
+    await setDoc(doc(db, 'news_topics', topic.id), topic, { merge: true });
   };
 
-  const upsertRssArticles = async (articles: RssArticle[]) => {
-    const chunks = [];
-    for (let i = 0; i < articles.length; i += 400) {
-      chunks.push(articles.slice(i, i + 400));
-    }
-    
-    for (const chunk of chunks) {
-      const batch = writeBatch(db);
-      chunk.forEach(article => {
-        const safeId = encodeURIComponent(article.id).replace(/\./g, '%2E').replace(/%/g, '_').slice(0, 100);
-        const cleanArticle = Object.fromEntries(Object.entries(article).filter(([_, v]) => v !== undefined));
-        batch.set(doc(db, 'rss_articles', safeId), cleanArticle, { merge: true });
-      });
-      await batch.commit();
-    }
+  const deleteNewsTopic = async (id: string) => {
+    setState(s => ({ ...s, newsTopics: s.newsTopics.filter(t => t.id !== id) }));
+    await deleteDoc(doc(db, 'news_topics', id));
+  };
+
+  const upsertGeneratedArticle = async (article: GeneratedArticle) => {
+    setState(s => {
+      const exists = s.generatedArticles.some(a => a.id === article.id);
+      if (exists) {
+        return { ...s, generatedArticles: s.generatedArticles.map(a => a.id === article.id ? article : a) };
+      }
+      return { ...s, generatedArticles: [...s.generatedArticles, article] };
+    });
+    await setDoc(doc(db, 'generated_articles', article.id), article, { merge: true });
   };
 
   const importData = async (data: string) => {
@@ -338,8 +329,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         isOffline,
         geminiApiKey,
         setGeminiApiKey,
-        updateRssPreferences,
-        upsertRssArticles,
+        upsertNewsTopic,
+        deleteNewsTopic,
+        upsertGeneratedArticle,
       }}
     >
       {children}

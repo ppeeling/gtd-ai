@@ -109,7 +109,7 @@ export function Sidebar({
             }`}
           >
             <Rss size={18} />
-            <span className="font-medium">News Reader</span>
+            <span className="font-medium">AI News</span>
           </button>
         </div>
 
