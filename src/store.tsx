@@ -36,6 +36,7 @@ interface AppContextType {
   upsertNewsTopic: (topic: NewsTopic) => Promise<void>;
   deleteNewsTopic: (id: string) => Promise<void>;
   upsertGeneratedArticle: (article: GeneratedArticle) => Promise<void>;
+  updateNewsTopicsOrder: (orderedIds: string[]) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -98,6 +99,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     const unsubNewsTopics = onSnapshot(collection(db, 'news_topics'), (snapshot) => {
       const topics = snapshot.docs.map(doc => doc.data() as NewsTopic);
+      topics.sort((a, b) => (a.order || 0) - (b.order || 0));
       setState(s => ({ ...s, newsTopics: topics }));
     }, (error) => console.error(error));
 
@@ -228,6 +230,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await setDoc(doc(db, 'generated_articles', article.id), article, { merge: true });
   };
 
+  const updateNewsTopicsOrder = async (orderedIds: string[]) => {
+    setState(s => {
+      const newTopics = [...s.newsTopics];
+      newTopics.forEach(t => {
+        const idx = orderedIds.indexOf(t.id);
+        if (idx !== -1) t.order = idx;
+      });
+      newTopics.sort((a, b) => (a.order || 0) - (b.order || 0));
+      return { ...s, newsTopics: newTopics };
+    });
+
+    const batch = writeBatch(db);
+    orderedIds.forEach((id, index) => {
+      batch.set(doc(db, 'news_topics', id), { order: index }, { merge: true });
+    });
+    await batch.commit();
+  };
+
   const importData = async (data: string) => {
     try {
       const parsed = JSON.parse(data);
@@ -332,6 +352,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         upsertNewsTopic,
         deleteNewsTopic,
         upsertGeneratedArticle,
+        updateNewsTopicsOrder,
       }}
     >
       {children}

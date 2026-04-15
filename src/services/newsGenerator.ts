@@ -1,4 +1,5 @@
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
+import { NewsTopic } from '../types';
 
 export async function generateNewsArticle(topic: string, sinceDate: Date, apiKey: string) {
   const ai = new GoogleGenAI({ apiKey });
@@ -30,5 +31,54 @@ Do not include markdown formatting like ** or # in the title.`;
   } catch (error) {
     console.error("Error generating news:", error);
     throw error;
+  }
+}
+
+export async function sortTopicsWithAI(topics: NewsTopic[], apiKey: string): Promise<string[]> {
+  if (!topics || topics.length === 0) return [];
+  
+  const ai = new GoogleGenAI({ apiKey });
+  
+  const topicData = topics.map(t => ({
+    id: t.id,
+    name: t.name,
+    lastGeneratedAt: t.lastGeneratedAt ? new Date(t.lastGeneratedAt).toISOString() : 'Never'
+  }));
+
+  const prompt = `You are an AI assistant that determines the current "hotness" and relevance of news topics.
+I have a list of news topics. I want you to order them from most currently relevant/active to least relevant.
+Take into account:
+1. Current real-world events, seasonality (e.g., sports seasons like F1, Olympics, World Cup), and general global interest right now.
+2. The 'lastGeneratedAt' date. Topics that haven't been generated recently might be less relevant, or maybe they are overdue. Primarily focus on global real-world relevance.
+
+Here are the topics:
+${JSON.stringify(topicData, null, 2)}
+
+Return a JSON array of the topic IDs in the sorted order, from most relevant to least relevant.`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.STRING
+          }
+        }
+      }
+    });
+
+    const text = response.text || '[]';
+    const sortedIds = JSON.parse(text);
+    if (Array.isArray(sortedIds)) {
+      return sortedIds;
+    }
+    return topics.map(t => t.id);
+  } catch (error) {
+    console.error("Error sorting topics:", error);
+    return topics.map(t => t.id);
   }
 }

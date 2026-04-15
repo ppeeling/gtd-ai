@@ -1,15 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../store';
-import { generateNewsArticle } from '../services/newsGenerator';
-import { Play, Pause, Loader2, Plus, Trash2, Calendar, RefreshCw, ChevronLeft, Settings2, RotateCcw } from 'lucide-react';
+import { generateNewsArticle, sortTopicsWithAI } from '../services/newsGenerator';
+import { Play, Pause, Loader2, Plus, Trash2, Calendar, RefreshCw, ChevronLeft, Settings2, RotateCcw, Sparkles } from 'lucide-react';
 
 export function NewsReader() {
-  const { state, upsertNewsTopic, deleteNewsTopic, upsertGeneratedArticle, geminiApiKey } = useAppStore();
+  const { state, upsertNewsTopic, deleteNewsTopic, upsertGeneratedArticle, geminiApiKey, updateNewsTopicsOrder } = useAppStore();
   const { newsTopics, generatedArticles } = state;
 
   const [newTopicName, setNewTopicName] = useState('');
   const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isOrdering, setIsOrdering] = useState(false);
+  const hasSortedRef = useRef(false);
 
   // Audio state
   const [isPlaying, setIsPlaying] = useState(false);
@@ -33,6 +35,26 @@ export function NewsReader() {
       localStorage.setItem('gtd_news_seeded', 'true');
     }
   }, [upsertNewsTopic]);
+
+  useEffect(() => {
+    if (newsTopics.length > 0 && geminiApiKey && !hasSortedRef.current && !isOrdering) {
+      hasSortedRef.current = true;
+      handleSortTopics();
+    }
+  }, [newsTopics.length, geminiApiKey]);
+
+  const handleSortTopics = async () => {
+    if (!geminiApiKey || newsTopics.length === 0) return;
+    setIsOrdering(true);
+    try {
+      const sortedIds = await sortTopicsWithAI(newsTopics, geminiApiKey);
+      await updateNewsTopicsOrder(sortedIds);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsOrdering(false);
+    }
+  };
 
   const handleAddTopic = (e: React.FormEvent) => {
     e.preventDefault();
@@ -273,7 +295,18 @@ export function NewsReader() {
       <div className="max-w-5xl mx-auto w-full">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-zinc-100">AI News Topics</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-3xl font-bold text-zinc-100">AI News Topics</h1>
+              <button
+                onClick={handleSortTopics}
+                disabled={isOrdering || !geminiApiKey}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 transition-colors text-sm font-medium disabled:opacity-50"
+                title="Sort by current relevance"
+              >
+                {isOrdering ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                {isOrdering ? 'Sorting...' : 'AI Sort'}
+              </button>
+            </div>
             <p className="text-zinc-400 mt-2">Select a topic to read or generate in-depth news articles.</p>
           </div>
           <form onSubmit={handleAddTopic} className="flex gap-2 w-full md:w-auto">
