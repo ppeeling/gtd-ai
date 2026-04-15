@@ -36,4 +36,26 @@ export interface AppState {
   lists: List[];
   tasks: Task[];
   savedPrompts: SavedPrompt[];
+  rssPreferences: RssPreferences;
+  rssArticles: RssArticle[];
+}
+
+export interface RssArticle {
+  id: string;
+  title: string;
+  link: string;
+  pubDate: string;
+  pubTimestamp?: number;
+  description: string;
+  content?: string;
+  topics?: string[];
+  feedTitles?: string[];
+}
+
+export interface RssPreferences {
+  likedArticles: string[];
+  dislikedArticles: string[];
+  followedTopics: string[];
+  playedArticles: string[];
+  hiddenArticles: string[];
 }

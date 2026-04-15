@@ -1,14 +1,22 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { AppState, List, SavedPrompt, Task } from './types';
+import { AppState, List, SavedPrompt, Task, RssPreferences, RssArticle } from './types';
 import { LogIn, WifiOff } from 'lucide-react';
 import { auth, db, googleProvider, signInWithPopup } from './firebase';
-import { collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch } from 'firebase/firestore';
+import { collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch, query, orderBy, limit } from 'firebase/firestore';
 import { onAuthStateChanged, User } from 'firebase/auth';
 
 const defaultState: AppState = {
   lists: [],
   tasks: [],
   savedPrompts: [],
+  rssPreferences: {
+    likedArticles: [],
+    dislikedArticles: [],
+    followedTopics: [],
+    playedArticles: [],
+    hiddenArticles: [],
+  },
+  rssArticles: [],
 };
 
 interface AppContextType {
@@ -28,6 +36,8 @@ interface AppContextType {
   isOffline: boolean;
   geminiApiKey: string;
   setGeminiApiKey: (key: string) => void;
+  updateRssPreferences: (updates: Partial<RssPreferences>) => void;
+  upsertRssArticles: (articles: RssArticle[]) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -88,12 +98,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setState(s => ({ ...s, savedPrompts: prompts }));
     }, (error) => console.error(error));
 
+    const unsubRssPrefs = onSnapshot(doc(db, 'preferences', 'rss'), (docSnap) => {
+      if (docSnap.exists()) {
+        setState(s => ({ ...s, rssPreferences: docSnap.data() as RssPreferences }));
+      }
+    }, (error) => console.error(error));
+
+    const qRss = query(collection(db, 'rss_articles'), orderBy('pubTimestamp', 'desc'), limit(300));
+    const unsubRssArticles = onSnapshot(qRss, (snapshot) => {
+      const articles = snapshot.docs.map(doc => doc.data() as RssArticle);
+      setState(s => ({ ...s, rssArticles: articles }));
+    }, (error) => console.error(error));
+
     setIsLoaded(true);
 
     return () => {
       unsubTasks();
       unsubLists();
       unsubPrompts();
+      unsubRssPrefs();
+      unsubRssArticles();
     };
   }, [user, isAuthReady]);
 
@@ -179,6 +203,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const deletePrompt = async (id: string) => {
     setState(s => ({ ...s, savedPrompts: s.savedPrompts.filter((p) => p.id !== id) }));
     await deleteDoc(doc(db, 'saved_prompts', id));
+  };
+
+  const updateRssPreferences = async (updates: Partial<RssPreferences>) => {
+    setState(s => ({ ...s, rssPreferences: { ...s.rssPreferences, ...updates } }));
+    await setDoc(doc(db, 'preferences', 'rss'), updates, { merge: true });
+  };
+
+  const upsertRssArticles = async (articles: RssArticle[]) => {
+    const chunks = [];
+    for (let i = 0; i < articles.length; i += 400) {
+      chunks.push(articles.slice(i, i + 400));
+    }
+    
+    for (const chunk of chunks) {
+      const batch = writeBatch(db);
+      chunk.forEach(article => {
+        const safeId = encodeURIComponent(article.id).replace(/\./g, '%2E').replace(/%/g, '_').slice(0, 100);
+        const cleanArticle = Object.fromEntries(Object.entries(article).filter(([_, v]) => v !== undefined));
+        batch.set(doc(db, 'rss_articles', safeId), cleanArticle, { merge: true });
+      });
+      await batch.commit();
+    }
   };
 
   const importData = async (data: string) => {
@@ -282,6 +328,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         isOffline,
         geminiApiKey,
         setGeminiApiKey,
+        updateRssPreferences,
+        upsertRssArticles,
       }}
     >
       {children}

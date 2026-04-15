@@ -1,4 +1,4 @@
-import { Plus, List as ListIcon, Bot, Download, Upload, Trash2, X, GripVertical, Calendar as CalendarIcon, RotateCcw } from 'lucide-react';
+import { Plus, List as ListIcon, Bot, Download, Upload, Trash2, X, GripVertical, Calendar as CalendarIcon, RotateCcw, Rss } from 'lucide-react';
 import { useAppStore } from '../store';
 import React, { useState, useRef } from 'react';
 import { Reorder } from 'motion/react';
@@ -96,6 +96,20 @@ export function Sidebar({
           >
             <CalendarIcon size={18} />
             <span className="font-medium">Calendar</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setIsChatActive(false);
+              setActiveListId('__rss__');
+              if (onClose) onClose();
+            }}
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
+              !isChatActive && activeListId === '__rss__' ? 'bg-indigo-600 text-white' : 'hover:bg-zinc-800 text-zinc-300'
+            }`}
+          >
+            <Rss size={18} />
+            <span className="font-medium">News Reader</span>
           </button>
         </div>
 
