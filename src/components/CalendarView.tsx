@@ -1,47 +1,53 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../store';
 import { TaskItem } from './TaskItem';
-import { Calendar as CalendarIcon, Search, Eye, EyeOff, XCircle } from 'lucide-react';
+import { Calendar as CalendarIcon, Search, Eye, EyeOff, XCircle, Newspaper } from 'lucide-react';
+import { Task, NewsTopic } from '../types';
 
-export function CalendarView() {
+type CalendarItem = 
+  | { type: 'task', data: Task, date: number }
+  | { type: 'news', data: NewsTopic, date: number };
+
+export function CalendarView({ onNavigate }: { onNavigate?: (path: string) => void }) {
   const { state } = useAppStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [showCompleted, setShowCompleted] = useState(true);
 
   // Filter tasks that have a due date or reminder date
   let calendarTasks = state.tasks.filter((t) => t.dueDate || t.reminderDate);
+  let calendarNews = state.newsTopics.filter((t) => t.scheduledDate);
 
   if (!showCompleted) {
     calendarTasks = calendarTasks.filter((t) => !t.completed);
   }
 
   if (searchQuery.trim()) {
-    calendarTasks = calendarTasks.filter((t) => 
-      t.name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const query = searchQuery.toLowerCase();
+    calendarTasks = calendarTasks.filter((t) => t.name.toLowerCase().includes(query));
+    calendarNews = calendarNews.filter((t) => t.name.toLowerCase().includes(query));
   }
 
-  // Sort them
-  calendarTasks.sort((a, b) => {
-    const dateA = a.dueDate || a.reminderDate || 0;
-    const dateB = b.dueDate || b.reminderDate || 0;
-    return dateA - dateB;
-  });
+  const allItems: CalendarItem[] = [
+    ...calendarTasks.map(t => ({ type: 'task' as const, data: t, date: t.dueDate || t.reminderDate || 0 })),
+    ...calendarNews.map(t => ({ type: 'news' as const, data: t, date: t.scheduledDate! }))
+  ];
 
-  // Group tasks by date for better visualization
-  const groupedTasks: { [date: string]: typeof calendarTasks } = {};
-  calendarTasks.forEach((task) => {
-    const taskDate = task.dueDate || task.reminderDate!;
-    const dateStr = new Date(taskDate).toLocaleDateString(undefined, {
+  // Sort them
+  allItems.sort((a, b) => a.date - b.date);
+
+  // Group items by date for better visualization
+  const groupedItems: { [date: string]: CalendarItem[] } = {};
+  allItems.forEach((item) => {
+    const dateStr = new Date(item.date).toLocaleDateString(undefined, {
       weekday: 'long',
       year: 'numeric',
       month: 'long',
       day: 'numeric',
     });
-    if (!groupedTasks[dateStr]) {
-      groupedTasks[dateStr] = [];
+    if (!groupedItems[dateStr]) {
+      groupedItems[dateStr] = [];
     }
-    groupedTasks[dateStr].push(task);
+    groupedItems[dateStr].push(item);
   });
 
   return (
@@ -57,7 +63,7 @@ export function CalendarView() {
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
             <input
               type="text"
-              placeholder="Search scheduled tasks..."
+              placeholder="Search scheduled items..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9 pr-10 py-1.5 text-sm bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-64"
@@ -84,33 +90,53 @@ export function CalendarView() {
 
       <div className="flex-1 overflow-y-auto p-4 md:p-8">
         <div className="max-w-3xl mx-auto space-y-8">
-          {calendarTasks.length === 0 ? (
+          {allItems.length === 0 ? (
             <div className="text-center py-20">
               <div className="w-16 h-16 bg-zinc-900 rounded-full flex items-center justify-center mx-auto mb-4 border border-zinc-800">
                 <CalendarIcon size={32} className="text-zinc-700" />
               </div>
-              <h3 className="text-zinc-300 font-medium mb-1">No scheduled tasks</h3>
-              <p className="text-zinc-500 text-sm">Tasks with due dates or reminders will appear here.</p>
+              <h3 className="text-zinc-300 font-medium mb-1">No scheduled items</h3>
+              <p className="text-zinc-500 text-sm">Tasks and News Topics with scheduled dates will appear here.</p>
             </div>
           ) : (
-            Object.entries(groupedTasks).map(([date, tasks]) => (
+            Object.entries(groupedItems).map(([date, items]) => (
               <div key={date} className="space-y-4">
                 <h3 className="text-sm font-semibold text-indigo-400 uppercase tracking-wider sticky top-0 bg-zinc-950/80 backdrop-blur-sm py-2 z-10">
                   {date}
                 </h3>
                 <div className="space-y-3">
-                  {tasks.map((task) => {
-                    const taskList = state.lists.find(l => l.id === task.listId);
-                    return (
-                      <div key={task.id} className="group relative">
-                        {taskList && (
-                          <div className="absolute -top-2 left-9 px-1.5 py-0.5 bg-zinc-800 text-[10px] font-bold text-zinc-500 uppercase tracking-wider rounded border border-zinc-700 z-10">
-                            {taskList.name}
+                  {items.map((item, idx) => {
+                    if (item.type === 'task') {
+                      const task = item.data as Task;
+                      const taskList = state.lists.find(l => l.id === task.listId);
+                      return (
+                        <div key={`task-${task.id}-${idx}`} className="group relative">
+                          {taskList && (
+                            <div className="absolute -top-2 left-9 px-1.5 py-0.5 bg-zinc-800 text-[10px] font-bold text-zinc-500 uppercase tracking-wider rounded border border-zinc-700 z-10">
+                              {taskList.name}
+                            </div>
+                          )}
+                          <TaskItem task={task} />
+                        </div>
+                      );
+                    } else {
+                      const topic = item.data as NewsTopic;
+                      return (
+                        <div 
+                          key={`news-${topic.id}-${idx}`} 
+                          onClick={() => onNavigate?.(`__rss__:${topic.id}`)}
+                          className="flex items-center gap-4 p-3 bg-zinc-900/50 border border-zinc-800 rounded-xl hover:border-indigo-500/50 transition-colors cursor-pointer group"
+                        >
+                          <div className="w-6 h-6 rounded-full bg-indigo-500/20 flex items-center justify-center shrink-0 group-hover:bg-indigo-500/30 transition-colors">
+                            <Newspaper size={14} className="text-indigo-400" />
                           </div>
-                        )}
-                        <TaskItem task={task} />
-                      </div>
-                    );
+                          <div className="flex-1 min-w-0">
+                            <h4 className="text-zinc-200 font-medium truncate group-hover:text-indigo-400 transition-colors">{topic.name}</h4>
+                            <p className="text-xs text-zinc-500 mt-0.5">Scheduled News Generation</p>
+                          </div>
+                        </div>
+                      );
+                    }
                   })}
                 </div>
               </div>

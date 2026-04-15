@@ -39,8 +39,11 @@ function AppContent() {
 
   const renderContent = () => {
     if (isChatActive) return <GeminiChat />;
-    if (activeListId === '__calendar__') return <CalendarView />;
-    if (activeListId === '__rss__') return <NewsReader />;
+    if (activeListId === '__calendar__') return <CalendarView onNavigate={setActiveListId} />;
+    if (activeListId.startsWith('__rss__')) {
+      const topicId = activeListId.split(':')[1] || null;
+      return <NewsReader initialTopicId={topicId} />;
+    }
     return <TaskListView listId={activeListId} />;
   };
 

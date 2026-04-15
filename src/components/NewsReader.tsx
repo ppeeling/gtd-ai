@@ -1,17 +1,22 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../store';
-import { generateNewsArticle, sortTopicsWithAI } from '../services/newsGenerator';
-import { Play, Pause, Loader2, Plus, Trash2, Calendar, RefreshCw, ChevronLeft, Settings2, RotateCcw, Sparkles } from 'lucide-react';
+import { generateNewsArticle } from '../services/newsGenerator';
+import { Play, Pause, Loader2, Plus, Trash2, Calendar, RefreshCw, ChevronLeft, Settings2, RotateCcw, Search, Clock } from 'lucide-react';
 
-export function NewsReader() {
-  const { state, upsertNewsTopic, deleteNewsTopic, upsertGeneratedArticle, geminiApiKey, updateNewsTopicsOrder } = useAppStore();
+export function NewsReader({ initialTopicId }: { initialTopicId?: string | null }) {
+  const { state, upsertNewsTopic, deleteNewsTopic, upsertGeneratedArticle, geminiApiKey } = useAppStore();
   const { newsTopics, generatedArticles } = state;
 
   const [newTopicName, setNewTopicName] = useState('');
-  const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedTopicId, setSelectedTopicId] = useState<string | null>(initialTopicId || null);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isOrdering, setIsOrdering] = useState(false);
-  const hasSortedRef = useRef(false);
+
+  useEffect(() => {
+    if (initialTopicId) {
+      setSelectedTopicId(initialTopicId);
+    }
+  }, [initialTopicId]);
 
   // Audio state
   const [isPlaying, setIsPlaying] = useState(false);
@@ -35,26 +40,6 @@ export function NewsReader() {
       localStorage.setItem('gtd_news_seeded', 'true');
     }
   }, [upsertNewsTopic]);
-
-  useEffect(() => {
-    if (newsTopics.length > 0 && geminiApiKey && !hasSortedRef.current && !isOrdering) {
-      hasSortedRef.current = true;
-      handleSortTopics();
-    }
-  }, [newsTopics.length, geminiApiKey]);
-
-  const handleSortTopics = async () => {
-    if (!geminiApiKey || newsTopics.length === 0) return;
-    setIsOrdering(true);
-    try {
-      const sortedIds = await sortTopicsWithAI(newsTopics, geminiApiKey);
-      await updateNewsTopicsOrder(sortedIds);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsOrdering(false);
-    }
-  };
 
   const handleAddTopic = (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,7 +66,7 @@ export function NewsReader() {
 
     try {
       const sinceDate = topic.lastGeneratedAt ? new Date(topic.lastGeneratedAt) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-      const { title, content } = await generateNewsArticle(topic.name, sinceDate, geminiApiKey);
+      const { title, content, nextScheduledDate } = await generateNewsArticle(topic.name, sinceDate, geminiApiKey);
 
       const now = Date.now();
       await upsertGeneratedArticle({
@@ -94,7 +79,8 @@ export function NewsReader() {
 
       await upsertNewsTopic({
         ...topic,
-        lastGeneratedAt: now
+        lastGeneratedAt: now,
+        scheduledDate: new Date(nextScheduledDate).getTime()
       });
     } catch (error) {
       console.error(error);
@@ -104,7 +90,7 @@ export function NewsReader() {
     }
   };
 
-  const handleDateChange = (dateStr: string) => {
+  const handleScheduledDateChange = (dateStr: string) => {
     if (!selectedTopicId) return;
     const topic = newsTopics.find(t => t.id === selectedTopicId);
     if (!topic) return;
@@ -112,7 +98,7 @@ export function NewsReader() {
     if (!isNaN(newDate.getTime())) {
       upsertNewsTopic({
         ...topic,
-        lastGeneratedAt: newDate.getTime()
+        scheduledDate: newDate.getTime()
       });
     }
   };
@@ -207,7 +193,24 @@ export function NewsReader() {
             <input
               type="date"
               value={topic?.lastGeneratedAt ? new Date(topic.lastGeneratedAt).toISOString().split('T')[0] : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
-              onChange={(e) => handleDateChange(e.target.value)}
+              onChange={(e) => {
+                const newDate = new Date(e.target.value);
+                if (!isNaN(newDate.getTime())) {
+                  upsertNewsTopic({ ...topic!, lastGeneratedAt: newDate.getTime() });
+                }
+              }}
+              className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-200 focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="text-sm text-zinc-400 flex items-center gap-2">
+              <Clock size={16} />
+              Next Scheduled:
+            </label>
+            <input
+              type="date"
+              value={topic?.scheduledDate ? new Date(topic.scheduledDate).toISOString().split('T')[0] : ''}
+              onChange={(e) => handleScheduledDateChange(e.target.value)}
               className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-200 focus:outline-none focus:border-indigo-500"
             />
           </div>
@@ -290,6 +293,8 @@ export function NewsReader() {
     );
   }
 
+  const filteredTopics = newsTopics.filter(t => t.name.toLowerCase().includes(searchQuery.toLowerCase()));
+
   return (
     <div className="flex flex-col h-full bg-zinc-950 p-6 md:p-8 overflow-y-auto w-full">
       <div className="max-w-5xl mx-auto w-full">
@@ -297,30 +302,33 @@ export function NewsReader() {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-3xl font-bold text-zinc-100">AI News Topics</h1>
-              <button
-                onClick={handleSortTopics}
-                disabled={isOrdering || !geminiApiKey}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 transition-colors text-sm font-medium disabled:opacity-50"
-                title="Sort by current relevance"
-              >
-                {isOrdering ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                {isOrdering ? 'Sorting...' : 'AI Sort'}
-              </button>
             </div>
             <p className="text-zinc-400 mt-2">Select a topic to read or generate in-depth news articles.</p>
           </div>
-          <form onSubmit={handleAddTopic} className="flex gap-2 w-full md:w-auto">
-            <input
-              type="text"
-              value={newTopicName}
-              onChange={e => setNewTopicName(e.target.value)}
-              placeholder="Add a new topic..."
-              className="flex-1 md:w-64 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2.5 text-zinc-100 focus:outline-none focus:border-indigo-500"
-            />
-            <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl transition-colors font-medium">
-              Add
-            </button>
-          </form>
+          <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+            <div className="relative">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search topics..."
+                className="w-full sm:w-48 bg-zinc-900 border border-zinc-800 rounded-xl pl-9 pr-4 py-2.5 text-zinc-100 focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+            <form onSubmit={handleAddTopic} className="flex gap-2">
+              <input
+                type="text"
+                value={newTopicName}
+                onChange={e => setNewTopicName(e.target.value)}
+                placeholder="Add a new topic..."
+                className="flex-1 sm:w-48 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2.5 text-zinc-100 focus:outline-none focus:border-indigo-500"
+              />
+              <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl transition-colors font-medium">
+                Add
+              </button>
+            </form>
+          </div>
         </div>
 
         {!geminiApiKey && (
@@ -331,7 +339,7 @@ export function NewsReader() {
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {newsTopics.map(topic => {
+          {filteredTopics.map(topic => {
             const article = generatedArticles.find(a => a.topicId === topic.id);
             return (
               <div
@@ -357,6 +365,12 @@ export function NewsReader() {
                     <Calendar size={14} className="mr-2" />
                     Last Generated: {topic.lastGeneratedAt ? new Date(topic.lastGeneratedAt).toLocaleDateString() : 'Never'}
                   </div>
+                  {topic.scheduledDate && (
+                    <div className="flex items-center text-sm text-indigo-400">
+                      <Clock size={14} className="mr-2" />
+                      Scheduled: {new Date(topic.scheduledDate).toLocaleDateString()}
+                    </div>
+                  )}
                   
                   {article ? (
                     <div className="text-sm text-zinc-500 line-clamp-2 mt-2 italic">

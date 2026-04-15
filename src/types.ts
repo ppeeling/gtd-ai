@@ -36,6 +36,7 @@ export interface NewsTopic {
   id: string;
   name: string;
   lastGeneratedAt: number | null;
+  scheduledDate?: number | null;
   order?: number;
 }
 
