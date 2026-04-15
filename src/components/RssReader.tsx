@@ -55,11 +55,16 @@ export function RssReader() {
     // Fetch content and topics if not already fetched
     if (!article.content) {
       setFetchingContent(true);
-      const content = await fetchArticleContent(article.link);
+      // @ts-ignore
+      const { content, metaTopics } = await fetchArticleContent(article.link);
       
       let topics = article.topics || [];
-      if (geminiApiKey && topics.length === 0) {
-        topics = await extractTopics(content || article.description, geminiApiKey);
+      if (topics.length === 0) {
+        if (metaTopics && metaTopics.length > 0) {
+          topics = metaTopics;
+        } else if (geminiApiKey) {
+          topics = await extractTopics(content || article.description, geminiApiKey);
+        }
       }
       
       await upsertRssArticles([{ ...article, content, topics }]);
@@ -136,9 +141,19 @@ export function RssReader() {
     synthRef.current.speak(titleUtterance);
 
     if (!article.content) {
-      const content = await fetchArticleContent(article.link);
-      await upsertRssArticles([{ ...article, content }]);
-      article = { ...article, content };
+      const { content, metaTopics } = await fetchArticleContent(article.link);
+      
+      let topics = article.topics || [];
+      if (topics.length === 0) {
+        if (metaTopics.length > 0) {
+          topics = metaTopics;
+        } else if (geminiApiKey) {
+          topics = await extractTopics(content || article.description, geminiApiKey);
+        }
+      }
+      
+      await upsertRssArticles([{ ...article, content, topics }]);
+      article = { ...article, content, topics };
     }
     
     const textToSpeak = article.content || article.description;
@@ -308,7 +323,26 @@ export function RssReader() {
                               {title}
                             </span>
                           ))}
-                          <span className="text-xs text-zinc-500">
+                          {article.topics?.map(topic => {
+                            const isFollowed = (rssPreferences.followedTopics || []).includes(topic);
+                            return (
+                              <button
+                                key={topic}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleTopic(topic);
+                                }}
+                                className={`text-xs px-2 py-1 rounded-md border transition-colors ${
+                                  isFollowed 
+                                    ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-300' 
+                                    : 'bg-zinc-800/50 border-zinc-700 text-zinc-400 hover:bg-zinc-700'
+                                }`}
+                              >
+                                {topic} {isFollowed ? '✓' : '+'}
+                              </button>
+                            );
+                          })}
+                          <span className="text-xs text-zinc-500 ml-auto">
                             {new Date(article.pubDate).toLocaleString()}
                           </span>
                         </div>
@@ -380,28 +414,6 @@ export function RssReader() {
                         </div>
                       ) : (
                         <div className="space-y-4">
-                          {article.topics && article.topics.length > 0 && (
-                            <div className="flex flex-wrap gap-2 mb-4">
-                              <Tag size={14} className="text-zinc-500 mt-1" />
-                              {article.topics.map(topic => {
-                                const isFollowed = (rssPreferences.followedTopics || []).includes(topic);
-                                return (
-                                  <button
-                                    key={topic}
-                                    onClick={() => toggleTopic(topic)}
-                                    className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-                                      isFollowed 
-                                        ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-300' 
-                                        : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:bg-zinc-700'
-                                    }`}
-                                  >
-                                    {topic} {isFollowed ? '✓' : '+'}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          )}
-                          
                           <div className="prose prose-invert prose-sm max-w-none text-zinc-300">
                             {article.content ? (
                               article.content.split('\n\n').map((p, i) => (

@@ -59,10 +59,16 @@ export async function fetchAllFeeds(): Promise<RssArticle[]> {
         const guid = item.querySelector('guid')?.textContent || link;
         const pubTimestamp = new Date(pubDate).getTime() || 0;
         
+        const categoryNodes = item.querySelectorAll('category');
+        const topics = Array.from(categoryNodes).map(c => c.textContent || '').filter(Boolean);
+        
         if (articleMap.has(guid)) {
           const existing = articleMap.get(guid)!;
           if (!existing.feedTitles?.includes(feed.title)) {
             existing.feedTitles = [...(existing.feedTitles || []), feed.title];
+          }
+          if (topics.length > 0) {
+            existing.topics = Array.from(new Set([...(existing.topics || []), ...topics]));
           }
         } else {
           articleMap.set(guid, {
@@ -73,6 +79,7 @@ export async function fetchAllFeeds(): Promise<RssArticle[]> {
             pubDate,
             pubTimestamp,
             feedTitles: [feed.title],
+            topics: topics.length > 0 ? topics : undefined,
           });
         }
       });
@@ -85,32 +92,39 @@ export async function fetchAllFeeds(): Promise<RssArticle[]> {
   return Array.from(articleMap.values()).sort((a, b) => (b.pubTimestamp || 0) - (a.pubTimestamp || 0));
 }
 
-export async function fetchArticleContent(url: string): Promise<string> {
+export async function fetchArticleContent(url: string): Promise<{content: string, metaTopics: string[]}> {
   try {
     const contents = await fetchWithProxy(url);
     
     const parser = new DOMParser();
     const doc = parser.parseFromString(contents, 'text/html');
     
+    const metaTags = Array.from(doc.querySelectorAll('meta[property="article:tag"]'));
+    const metaTopics = metaTags.map(m => m.getAttribute('content') || '').filter(Boolean);
+    
     // BBC articles usually have content in <article> or specific text blocks
     // This is a basic heuristic to extract paragraphs from the main article body
+    let content = '';
     const article = doc.querySelector('article');
     if (article) {
       const paragraphs = Array.from(article.querySelectorAll('p[data-component="text-block"]'));
       if (paragraphs.length > 0) {
-        return paragraphs.map(p => p.textContent).join('\n\n');
+        content = paragraphs.map(p => p.textContent).join('\n\n');
+      } else {
+        // Fallback for older/different BBC layouts
+        const allParagraphs = Array.from(article.querySelectorAll('p'));
+        content = allParagraphs.map(p => p.textContent).join('\n\n');
       }
-      // Fallback for older/different BBC layouts
-      const allParagraphs = Array.from(article.querySelectorAll('p'));
-      return allParagraphs.map(p => p.textContent).join('\n\n');
+    } else {
+      // Generic fallback
+      const allParagraphs = Array.from(doc.querySelectorAll('p'));
+      content = allParagraphs.map(p => p.textContent).join('\n\n');
     }
     
-    // Generic fallback
-    const allParagraphs = Array.from(doc.querySelectorAll('p'));
-    return allParagraphs.map(p => p.textContent).join('\n\n');
+    return { content, metaTopics };
   } catch (error) {
     console.error('Failed to fetch article content:', error);
-    return 'Failed to load full article content.';
+    return { content: 'Failed to load full article content.', metaTopics: [] };
   }
 }
 
