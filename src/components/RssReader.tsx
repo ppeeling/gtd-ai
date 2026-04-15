@@ -68,34 +68,34 @@ export function RssReader() {
   };
 
   const toggleLike = (id: string) => {
-    const isLiked = rssPreferences.likedArticles.includes(id);
+    const isLiked = (rssPreferences.likedArticles || []).includes(id);
     const newLiked = isLiked 
-      ? rssPreferences.likedArticles.filter(a => a !== id)
-      : [...rssPreferences.likedArticles, id];
+      ? (rssPreferences.likedArticles || []).filter(a => a !== id)
+      : [...(rssPreferences.likedArticles || []), id];
       
     // Remove from disliked if liking
-    const newDisliked = rssPreferences.dislikedArticles.filter(a => a !== id);
+    const newDisliked = (rssPreferences.dislikedArticles || []).filter(a => a !== id);
     
     updateRssPreferences({ likedArticles: newLiked, dislikedArticles: newDisliked });
   };
 
   const toggleDislike = (id: string) => {
-    const isDisliked = rssPreferences.dislikedArticles.includes(id);
+    const isDisliked = (rssPreferences.dislikedArticles || []).includes(id);
     const newDisliked = isDisliked 
-      ? rssPreferences.dislikedArticles.filter(a => a !== id)
-      : [...rssPreferences.dislikedArticles, id];
+      ? (rssPreferences.dislikedArticles || []).filter(a => a !== id)
+      : [...(rssPreferences.dislikedArticles || []), id];
       
     // Remove from liked if disliking
-    const newLiked = rssPreferences.likedArticles.filter(a => a !== id);
+    const newLiked = (rssPreferences.likedArticles || []).filter(a => a !== id);
     
     updateRssPreferences({ likedArticles: newLiked, dislikedArticles: newDisliked });
   };
 
   const toggleTopic = (topic: string) => {
-    const isFollowed = rssPreferences.followedTopics.includes(topic);
+    const isFollowed = (rssPreferences.followedTopics || []).includes(topic);
     const newTopics = isFollowed
-      ? rssPreferences.followedTopics.filter(t => t !== topic)
-      : [...rssPreferences.followedTopics, topic];
+      ? (rssPreferences.followedTopics || []).filter(t => t !== topic)
+      : [...(rssPreferences.followedTopics || []), topic];
       
     updateRssPreferences({ followedTopics: newTopics });
   };
@@ -203,8 +203,8 @@ export function RssReader() {
     .filter(a => showHidden || !(rssPreferences.hiddenArticles || []).includes(a.id))
     .sort((a, b) => {
       if (sortBy === 'recommended') {
-        const scoreA = scoreArticle(a, rssPreferences.followedTopics, rssPreferences.likedArticles, rssPreferences.dislikedArticles);
-        const scoreB = scoreArticle(b, rssPreferences.followedTopics, rssPreferences.likedArticles, rssPreferences.dislikedArticles);
+        const scoreA = scoreArticle(a, rssPreferences.followedTopics || [], rssPreferences.likedArticles || [], rssPreferences.dislikedArticles || []);
+        const scoreB = scoreArticle(b, rssPreferences.followedTopics || [], rssPreferences.likedArticles || [], rssPreferences.dislikedArticles || []);
         if (scoreA !== scoreB) return scoreB - scoreA;
       }
       return (b.pubTimestamp || 0) - (a.pubTimestamp || 0);
@@ -218,8 +218,8 @@ export function RssReader() {
             BBC News Feed
           </h2>
           <p className="text-zinc-400 text-sm mt-1">
-            {rssPreferences.followedTopics.length > 0 
-              ? `Following: ${rssPreferences.followedTopics.join(', ')}`
+            {(rssPreferences.followedTopics || []).length > 0 
+              ? `Following: ${(rssPreferences.followedTopics || []).join(', ')}`
               : 'Follow topics to get recommendations'}
           </p>
           {!geminiApiKey && (
@@ -285,8 +285,8 @@ export function RssReader() {
           <div className="max-w-4xl mx-auto space-y-4">
             {sortedArticles.map((article, index) => {
               const isExpanded = expandedId === article.id;
-              const isLiked = rssPreferences.likedArticles.includes(article.id);
-              const isDisliked = rssPreferences.dislikedArticles.includes(article.id);
+              const isLiked = (rssPreferences.likedArticles || []).includes(article.id);
+              const isDisliked = (rssPreferences.dislikedArticles || []).includes(article.id);
               const isPlayed = (rssPreferences.playedArticles || []).includes(article.id);
               const isHidden = (rssPreferences.hiddenArticles || []).includes(article.id);
               const isPlayingThis = currentArticleIndex === index && isPlaying;
@@ -384,7 +384,7 @@ export function RssReader() {
                             <div className="flex flex-wrap gap-2 mb-4">
                               <Tag size={14} className="text-zinc-500 mt-1" />
                               {article.topics.map(topic => {
-                                const isFollowed = rssPreferences.followedTopics.includes(topic);
+                                const isFollowed = (rssPreferences.followedTopics || []).includes(topic);
                                 return (
                                   <button
                                     key={topic}

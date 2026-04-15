@@ -100,7 +100,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     const unsubRssPrefs = onSnapshot(doc(db, 'preferences', 'rss'), (docSnap) => {
       if (docSnap.exists()) {
-        setState(s => ({ ...s, rssPreferences: docSnap.data() as RssPreferences }));
+        const data = docSnap.data();
+        setState(s => ({ 
+          ...s, 
+          rssPreferences: { 
+            likedArticles: data.likedArticles || [],
+            dislikedArticles: data.dislikedArticles || [],
+            followedTopics: data.followedTopics || [],
+            playedArticles: data.playedArticles || [],
+            hiddenArticles: data.hiddenArticles || []
+          } 
+        }));
       }
     }, (error) => console.error(error));
 
