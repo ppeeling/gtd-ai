@@ -32,12 +32,19 @@ export interface SavedPrompt {
   prompt: string;
 }
 
+export interface Source {
+  name: string;
+  url: string;
+  domain: string;
+}
+
 export interface NewsTopic {
   id: string;
   name: string;
   lastGeneratedAt: number | null;
   scheduledDate?: number | null;
   order?: number;
+  dislikedSources?: string[];
 }
 
 export interface GeneratedArticle {
@@ -46,6 +53,7 @@ export interface GeneratedArticle {
   title: string;
   content: string;
   generatedAt: number;
+  sources?: Source[];
 }
 
 export interface AppState {

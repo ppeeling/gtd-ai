@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../store';
-import { generateNewsArticle } from '../services/newsGenerator';
-import { Play, Pause, Loader2, Plus, Trash2, Calendar, RefreshCw, ChevronLeft, Settings2, RotateCcw, Search, Clock } from 'lucide-react';
+import { generateNewsArticle, generateAudio } from '../services/newsGenerator';
+import { Play, Pause, Loader2, Plus, Trash2, Calendar, RefreshCw, ChevronLeft, Settings2, RotateCcw, Search, Clock, ArrowDownUp, Volume2 } from 'lucide-react';
 
 export function NewsReader({ initialTopicId }: { initialTopicId?: string | null }) {
   const { state, upsertNewsTopic, deleteNewsTopic, upsertGeneratedArticle, geminiApiKey } = useAppStore();
@@ -9,6 +9,7 @@ export function NewsReader({ initialTopicId }: { initialTopicId?: string | null 
 
   const [newTopicName, setNewTopicName] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState<string>(() => localStorage.getItem('gtd_news_sort') || 'name_asc');
   const [selectedTopicId, setSelectedTopicId] = useState<string | null>(initialTopicId || null);
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -18,11 +19,28 @@ export function NewsReader({ initialTopicId }: { initialTopicId?: string | null 
     }
   }, [initialTopicId]);
 
+  useEffect(() => {
+    localStorage.setItem('gtd_news_sort', sortBy);
+  }, [sortBy]);
+
   // Audio state
   const [isPlaying, setIsPlaying] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
+  const [ttsEngine, setTtsEngine] = useState<'browser' | 'gemini'>(() => (localStorage.getItem('gtd_news_tts_engine') as any) || 'browser');
+  const [isPreparingAudio, setIsPreparingAudio] = useState(false);
+
   const synthRef = useRef<SpeechSynthesis | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const audioBuffersRef = useRef<Record<string, AudioBuffer>>({});
+
+  useEffect(() => {
+    localStorage.setItem('gtd_news_tts_engine', ttsEngine);
+    if (isPlaying || isPaused) {
+      stopAudio(); // Stop if user switches engine while playing
+    }
+  }, [ttsEngine]);
 
   useEffect(() => {
     synthRef.current = window.speechSynthesis;
@@ -66,7 +84,7 @@ export function NewsReader({ initialTopicId }: { initialTopicId?: string | null 
 
     try {
       const sinceDate = topic.lastGeneratedAt ? new Date(topic.lastGeneratedAt) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-      const { title, content, nextScheduledDate } = await generateNewsArticle(topic.name, sinceDate, geminiApiKey);
+      const { title, content, nextScheduledDate, sources } = await generateNewsArticle(topic.name, sinceDate, geminiApiKey, topic.dislikedSources || []);
 
       const now = Date.now();
       await upsertGeneratedArticle({
@@ -74,7 +92,8 @@ export function NewsReader({ initialTopicId }: { initialTopicId?: string | null 
         topicId: selectedTopicId,
         title,
         content,
-        generatedAt: now
+        generatedAt: now,
+        sources
       });
 
       await upsertNewsTopic({
@@ -103,7 +122,17 @@ export function NewsReader({ initialTopicId }: { initialTopicId?: string | null 
     }
   };
 
-  const playArticle = (articleId: string) => {
+  const ensureAudioContext = () => {
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    if (audioCtxRef.current.state === 'suspended') {
+      audioCtxRef.current.resume();
+    }
+    return audioCtxRef.current;
+  };
+
+  const playBrowserTTS = (articleId: string) => {
     if (!synthRef.current) return;
     synthRef.current.cancel();
 
@@ -121,15 +150,93 @@ export function NewsReader({ initialTopicId }: { initialTopicId?: string | null 
     synthRef.current.speak(utterance);
   };
 
-  const togglePlayPause = (articleId: string) => {
-    if (!synthRef.current) return;
+  const playGeminiTTS = async (articleId: string) => {
+    const article = generatedArticles.find(a => a.id === articleId);
+    if (!article || !geminiApiKey) {
+      if (!geminiApiKey) alert("Gemini API key is required for High Quality TTS");
+      return;
+    }
 
+    setIsPreparingAudio(true);
+    const audioCtx = ensureAudioContext();
+
+    try {
+      let audioBuffer = audioBuffersRef.current[articleId];
+
+      if (!audioBuffer) {
+        // Clean markdown out of the text before TTS
+        const textToRead = `${article.title}. ${article.content.replace(/[*#]/g, '')}`; 
+        const base64Audio = await generateAudio(textToRead, geminiApiKey);
+        if (!base64Audio) throw new Error("Failed to generate audio via Gemini");
+        
+        // Convert base64 PCM (16-bit 24kHz) to Float32 AudioBuffer
+        const binaryString = atob(base64Audio);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+        
+        const dataView = new DataView(bytes.buffer);
+        const floatArray = new Float32Array(len / 2);
+        for (let i = 0; i < len; i += 2) {
+            const int16 = dataView.getInt16(i, true);
+            floatArray[i / 2] = int16 / 32768.0;
+        }
+        
+        audioBuffer = audioCtx.createBuffer(1, floatArray.length, 24000);
+        audioBuffer.getChannelData(0).set(floatArray);
+        audioBuffersRef.current[articleId] = audioBuffer;
+      }
+
+      if (audioSourceRef.current) {
+        audioSourceRef.current.stop();
+        audioSourceRef.current.disconnect();
+      }
+
+      const source = audioCtx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.playbackRate.value = playbackRate;
+      source.connect(audioCtx.destination);
+      
+      source.onended = () => {
+        setIsPlaying(false);
+        setIsPaused(false);
+      };
+      
+      source.start();
+      audioSourceRef.current = source;
+      
+      setIsPlaying(true);
+      setIsPaused(false);
+
+    } catch (error) {
+      console.error(error);
+      alert("Error playing high-fidelity TTS audio. Falling back to browser TTS.");
+      setTtsEngine('browser');
+      playBrowserTTS(articleId);
+    } finally {
+      setIsPreparingAudio(false);
+    }
+  };
+
+  const playArticle = (articleId: string) => {
+    if (ttsEngine === 'gemini') {
+      playGeminiTTS(articleId);
+    } else {
+      playBrowserTTS(articleId);
+    }
+  };
+
+  const togglePlayPause = (articleId: string) => {
     if (isPlaying) {
-      synthRef.current.pause();
+      if (ttsEngine === 'browser' && synthRef.current) synthRef.current.pause();
+      else if (ttsEngine === 'gemini' && audioCtxRef.current) audioCtxRef.current.suspend();
       setIsPlaying(false);
       setIsPaused(true);
     } else if (isPaused) {
-      synthRef.current.resume();
+      if (ttsEngine === 'browser' && synthRef.current) synthRef.current.resume();
+      else if (ttsEngine === 'gemini' && audioCtxRef.current) audioCtxRef.current.resume();
       setIsPlaying(true);
       setIsPaused(false);
     } else {
@@ -138,25 +245,33 @@ export function NewsReader({ initialTopicId }: { initialTopicId?: string | null 
   };
 
   const restartAudio = (articleId: string) => {
-    if (!synthRef.current) return;
-    synthRef.current.cancel();
-    setIsPlaying(false);
-    setIsPaused(false);
+    stopAudio();
     setTimeout(() => playArticle(articleId), 50);
   };
 
   const stopAudio = () => {
     if (synthRef.current) {
       synthRef.current.cancel();
-      setIsPlaying(false);
-      setIsPaused(false);
     }
+    if (audioSourceRef.current) {
+      try { audioSourceRef.current.stop(); } catch (e) {}
+      audioSourceRef.current.disconnect();
+      audioSourceRef.current = null;
+    }
+    setIsPlaying(false);
+    setIsPaused(false);
   };
 
   const handleRateChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setPlaybackRate(parseFloat(e.target.value));
-    if (isPlaying || isPaused) {
-      stopAudio();
+    const rate = parseFloat(e.target.value);
+    setPlaybackRate(rate);
+
+    if (ttsEngine === 'gemini' && audioSourceRef.current) {
+      audioSourceRef.current.playbackRate.value = rate;
+    } else if (ttsEngine === 'browser') {
+      if (isPlaying || isPaused) {
+        stopAudio();
+      }
     }
   };
 
@@ -242,45 +357,105 @@ export function NewsReader({ initialTopicId }: { initialTopicId?: string | null 
                   </span>
                   <div className="flex items-center gap-3">
                     <div className="flex items-center gap-2 bg-zinc-800/50 rounded-lg px-3 py-1.5 border border-zinc-700">
+                      <Volume2 size={16} className="text-zinc-400" />
+                      <select
+                        value={ttsEngine}
+                        onChange={(e) => setTtsEngine(e.target.value as 'browser' | 'gemini')}
+                        className="bg-transparent text-sm text-zinc-300 focus:outline-none cursor-pointer"
+                      >
+                        <option value="browser" className="bg-zinc-800">Browser Voice</option>
+                        <option value="gemini" className="bg-zinc-800">Gemini High Quality</option>
+                      </select>
+                    </div>
+
+                    <div className="flex items-center gap-2 bg-zinc-800/50 rounded-lg px-3 py-1.5 border border-zinc-700">
                       <Settings2 size={16} className="text-zinc-400" />
                       <select
                         value={playbackRate}
                         onChange={handleRateChange}
                         className="bg-transparent text-sm text-zinc-300 focus:outline-none cursor-pointer"
                       >
-                        <option value={0.75}>0.75x</option>
-                        <option value={1}>1x</option>
-                        <option value={1.25}>1.25x</option>
-                        <option value={1.5}>1.5x</option>
-                        <option value={2}>2x</option>
+                        <option value={0.75} className="bg-zinc-800">0.75x</option>
+                        <option value={1} className="bg-zinc-800">1x</option>
+                        <option value={1.25} className="bg-zinc-800">1.25x</option>
+                        <option value={1.5} className="bg-zinc-800">1.5x</option>
+                        <option value={2} className="bg-zinc-800">2x</option>
                       </select>
                     </div>
                     {(isPlaying || isPaused) && (
                       <button
                         onClick={() => restartAudio(article.id)}
                         className="flex items-center gap-2 px-4 py-2 rounded-full font-medium transition-colors bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+                        disabled={isPreparingAudio}
                       >
                         <RotateCcw size={18} /> Restart
                       </button>
                     )}
                     <button
                       onClick={() => togglePlayPause(article.id)}
+                      disabled={isPreparingAudio}
                       className={`flex items-center gap-2 px-5 py-2 rounded-full font-medium transition-colors ${
                         isPlaying 
                           ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 border border-amber-500/50' 
                           : 'bg-indigo-600 text-white hover:bg-indigo-700'
-                      }`}
+                      } disabled:opacity-50`}
                     >
-                      {isPlaying ? <><Pause size={18} /> Pause</> : <><Play size={18} /> {isPaused ? 'Resume' : 'Listen'}</>}
+                      {isPreparingAudio ? (
+                        <><Loader2 size={18} className="animate-spin" /> Preparing...</>
+                      ) : isPlaying ? (
+                        <><Pause size={18} /> Pause</>
+                      ) : (
+                        <><Play size={18} /> {isPaused ? 'Resume' : 'Listen'}</>
+                      )}
                     </button>
                   </div>
                 </div>
               </div>
               <div className="prose prose-invert prose-lg max-w-none">
                 {article.content.split('\n\n').map((p, i) => (
-                  <p key={i} className="mb-6 text-zinc-300 leading-relaxed">{p}</p>
+                  <p key={i} className="mb-6 text-zinc-300 leading-relaxed" dangerouslySetInnerHTML={{ __html: p.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">$1</a>') }} />
                 ))}
               </div>
+              
+              {article.sources && article.sources.length > 0 && (
+                <div className="mt-12 pt-8 border-t border-zinc-800">
+                  <h3 className="text-xl font-bold text-zinc-100 mb-4">Sources Used</h3>
+                  <ul className="space-y-3">
+                    {article.sources.map((source, i) => (
+                      <li key={i} className="flex flex-wrap items-center gap-3 text-sm">
+                        <a 
+                          href={source.url} 
+                          target="_blank" 
+                          rel="noopener noreferrer" 
+                          className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2"
+                        >
+                          {source.name}
+                        </a>
+                        <span className="text-zinc-600">({source.domain})</span>
+                        {!topic.dislikedSources?.includes(source.domain) && (
+                          <button
+                            onClick={() => {
+                              const currentDisliked = topic.dislikedSources || [];
+                              if (!currentDisliked.includes(source.domain)) {
+                                upsertNewsTopic({
+                                  ...topic,
+                                  dislikedSources: [...currentDisliked, source.domain]
+                                });
+                              }
+                            }}
+                            className="bg-zinc-800 text-xs text-zinc-400 hover:text-rose-400 hover:bg-zinc-700 px-2 py-1 rounded transition-colors"
+                          >
+                            Dislike Source ({source.domain})
+                          </button>
+                        )}
+                        {topic.dislikedSources?.includes(source.domain) && (
+                          <span className="text-rose-400/80 text-xs italic bg-rose-500/10 px-2 py-1 rounded border border-rose-500/20">Source now disliked</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center h-full text-zinc-500">
@@ -288,12 +463,64 @@ export function NewsReader({ initialTopicId }: { initialTopicId?: string | null 
               <p className="text-sm mt-2">Click "Generate News" to create an in-depth article on this topic.</p>
             </div>
           )}
+
+          {/* Settings Section */}
+          <div className="max-w-4xl mx-auto mt-12 pt-8 border-t border-zinc-800/50">
+            <div className="flex items-center gap-2 mb-4 text-zinc-400">
+              <Settings2 size={18} />
+              <h3 className="text-lg font-semibold text-zinc-200">Topic Settings</h3>
+            </div>
+            
+            <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-5">
+              <h4 className="text-sm font-medium text-zinc-300 mb-3">Disliked Sources for "{topic?.name}"</h4>
+              {(!topic?.dislikedSources || topic.dislikedSources.length === 0) ? (
+                <p className="text-sm text-zinc-500 italic">No sources have been disliked yet. Disliking a source will prevent it from being used in future articles.</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {topic.dislikedSources.map((domain) => (
+                    <div key={domain} className="flex items-center gap-2 bg-rose-500/10 border border-rose-500/20 text-rose-300 text-sm px-3 py-1.5 rounded-lg">
+                      <span>{domain}</span>
+                      <button
+                        onClick={() => {
+                          upsertNewsTopic({
+                            ...topic!,
+                            dislikedSources: topic.dislikedSources?.filter(d => d !== domain)
+                          });
+                        }}
+                        className="text-rose-400 hover:text-rose-200 hover:bg-rose-500/20 rounded-full p-0.5 transition-colors"
+                        title="Re-allow this source"
+                      >
+                        <RotateCcw size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     );
   }
 
   const filteredTopics = newsTopics.filter(t => t.name.toLowerCase().includes(searchQuery.toLowerCase()));
+
+  const sortedTopics = [...filteredTopics].sort((a, b) => {
+    const aGen = a.lastGeneratedAt || 0;
+    const bGen = b.lastGeneratedAt || 0;
+    const aSched = a.scheduledDate || 0;
+    const bSched = b.scheduledDate || 0;
+
+    switch (sortBy) {
+      case 'name_asc': return a.name.localeCompare(b.name);
+      case 'name_desc': return b.name.localeCompare(a.name);
+      case 'generated_desc': return bGen - aGen;
+      case 'generated_asc': return aGen - bGen;
+      case 'scheduled_asc': return (a.scheduledDate || Number.MAX_SAFE_INTEGER) - (b.scheduledDate || Number.MAX_SAFE_INTEGER);
+      case 'scheduled_desc': return bSched - aSched;
+      default: return 0;
+    }
+  });
 
   return (
     <div className="flex flex-col h-full bg-zinc-950 p-6 md:p-8 overflow-y-auto w-full">
@@ -305,7 +532,7 @@ export function NewsReader({ initialTopicId }: { initialTopicId?: string | null 
             </div>
             <p className="text-zinc-400 mt-2">Select a topic to read or generate in-depth news articles.</p>
           </div>
-          <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+          <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
             <div className="relative">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
               <input
@@ -315,6 +542,21 @@ export function NewsReader({ initialTopicId }: { initialTopicId?: string | null 
                 placeholder="Search topics..."
                 className="w-full sm:w-48 bg-zinc-900 border border-zinc-800 rounded-xl pl-9 pr-4 py-2.5 text-zinc-100 focus:outline-none focus:border-indigo-500"
               />
+            </div>
+            <div className="relative flex items-center bg-zinc-900 border border-zinc-800 rounded-xl pl-3 pr-2 py-2.5 text-zinc-100 focus-within:border-indigo-500">
+              <ArrowDownUp size={16} className="text-zinc-500 shrink-0 mr-2" />
+              <select
+                value={sortBy}
+                onChange={e => setSortBy(e.target.value)}
+                className="bg-transparent text-sm focus:outline-none w-full appearance-none cursor-pointer pr-4"
+              >
+                <option value="name_asc" className="bg-zinc-900">Name (A-Z)</option>
+                <option value="name_desc" className="bg-zinc-900">Name (Z-A)</option>
+                <option value="generated_desc" className="bg-zinc-900">Generated (Newest)</option>
+                <option value="generated_asc" className="bg-zinc-900">Generated (Oldest)</option>
+                <option value="scheduled_asc" className="bg-zinc-900">Scheduled (Soonest)</option>
+                <option value="scheduled_desc" className="bg-zinc-900">Scheduled (Latest)</option>
+              </select>
             </div>
             <form onSubmit={handleAddTopic} className="flex gap-2">
               <input
@@ -339,7 +581,7 @@ export function NewsReader({ initialTopicId }: { initialTopicId?: string | null 
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredTopics.map(topic => {
+          {sortedTopics.map(topic => {
             const article = generatedArticles.find(a => a.topicId === topic.id);
             return (
               <div
