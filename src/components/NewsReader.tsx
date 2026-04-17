@@ -1,7 +1,36 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../store';
 import { generateNewsArticle, generateAudio } from '../services/newsGenerator';
-import { Play, Pause, Loader2, Plus, Trash2, Calendar, RefreshCw, ChevronLeft, Settings2, RotateCcw, Search, Clock, ArrowDownUp, Volume2 } from 'lucide-react';
+import { Play, Pause, Loader2, Plus, Trash2, Calendar, RefreshCw, ChevronLeft, Settings2, RotateCcw, Search, Clock, ArrowDownUp, Volume2, Edit2, Check } from 'lucide-react';
+
+function createWavBlob(pcmBytes: Uint8Array, sampleRate: number = 24000): Blob {
+  const numChannels = 1;
+  const bitsPerSample = 16;
+  const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+  const blockAlign = numChannels * (bitsPerSample / 8);
+  const dataSize = pcmBytes.length;
+  const chunkSize = 36 + dataSize;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+
+  view.setUint32(0, 1380533830, false); // "RIFF"
+  view.setUint32(4, chunkSize, true);
+  view.setUint32(8, 1463899717, false); // "WAVE"
+  view.setUint32(12, 1718449184, false); // "fmt "
+  view.setUint32(16, 16, true);          // Subchunk1Size
+  view.setUint16(20, 1, true);           // AudioFormat (PCM)
+  view.setUint16(22, numChannels, true); // NumChannels
+  view.setUint32(24, sampleRate, true);  // SampleRate
+  view.setUint32(28, byteRate, true);    // ByteRate
+  view.setUint16(32, blockAlign, true);  // BlockAlign
+  view.setUint16(34, bitsPerSample, true); // BitsPerSample
+  view.setUint32(36, 1684108385, false); // "data"
+  view.setUint32(40, dataSize, true);
+
+  new Uint8Array(buffer, 44).set(pcmBytes);
+
+  return new Blob([view], { type: 'audio/wav' });
+}
 
 export function NewsReader({ initialTopicId }: { initialTopicId?: string | null }) {
   const { state, upsertNewsTopic, deleteNewsTopic, upsertGeneratedArticle, geminiApiKey } = useAppStore();
@@ -30,10 +59,12 @@ export function NewsReader({ initialTopicId }: { initialTopicId?: string | null 
   const [ttsEngine, setTtsEngine] = useState<'browser' | 'gemini'>(() => (localStorage.getItem('gtd_news_tts_engine') as any) || 'browser');
   const [isPreparingAudio, setIsPreparingAudio] = useState(false);
 
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editingNameValue, setEditingNameValue] = useState('');
+
   const synthRef = useRef<SpeechSynthesis | null>(null);
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
-  const audioBuffersRef = useRef<Record<string, AudioBuffer>>({});
+  const audioElRef = useRef<HTMLAudioElement | null>(null);
+  const audioUrlsRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
     localStorage.setItem('gtd_news_tts_engine', ttsEngine);
@@ -48,6 +79,10 @@ export function NewsReader({ initialTopicId }: { initialTopicId?: string | null 
       if (synthRef.current) {
         synthRef.current.cancel();
       }
+      if (audioElRef.current) {
+        audioElRef.current.pause();
+      }
+      Object.values(audioUrlsRef.current).forEach(url => URL.revokeObjectURL(url));
     };
   }, []);
 
@@ -122,14 +157,15 @@ export function NewsReader({ initialTopicId }: { initialTopicId?: string | null 
     }
   };
 
-  const ensureAudioContext = () => {
-    if (!audioCtxRef.current) {
-      audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+  const handleSaveName = () => {
+    if (!selectedTopicId) return;
+    const topic = newsTopics.find(t => t.id === selectedTopicId);
+    if (!topic) return;
+
+    if (editingNameValue.trim() && editingNameValue.trim() !== topic.name) {
+      upsertNewsTopic({ ...topic, name: editingNameValue.trim() });
     }
-    if (audioCtxRef.current.state === 'suspended') {
-      audioCtxRef.current.resume();
-    }
-    return audioCtxRef.current;
+    setIsEditingName(false);
   };
 
   const playBrowserTTS = (articleId: string) => {
@@ -158,18 +194,16 @@ export function NewsReader({ initialTopicId }: { initialTopicId?: string | null 
     }
 
     setIsPreparingAudio(true);
-    const audioCtx = ensureAudioContext();
 
     try {
-      let audioBuffer = audioBuffersRef.current[articleId];
+      let audioUrl = audioUrlsRef.current[articleId];
 
-      if (!audioBuffer) {
+      if (!audioUrl) {
         // Clean markdown out of the text before TTS
         const textToRead = `${article.title}. ${article.content.replace(/[*#]/g, '')}`; 
         const base64Audio = await generateAudio(textToRead, geminiApiKey);
         if (!base64Audio) throw new Error("Failed to generate audio via Gemini");
         
-        // Convert base64 PCM (16-bit 24kHz) to Float32 AudioBuffer
         const binaryString = atob(base64Audio);
         const len = binaryString.length;
         const bytes = new Uint8Array(len);
@@ -177,35 +211,26 @@ export function NewsReader({ initialTopicId }: { initialTopicId?: string | null 
             bytes[i] = binaryString.charCodeAt(i);
         }
         
-        const dataView = new DataView(bytes.buffer);
-        const floatArray = new Float32Array(len / 2);
-        for (let i = 0; i < len; i += 2) {
-            const int16 = dataView.getInt16(i, true);
-            floatArray[i / 2] = int16 / 32768.0;
-        }
-        
-        audioBuffer = audioCtx.createBuffer(1, floatArray.length, 24000);
-        audioBuffer.getChannelData(0).set(floatArray);
-        audioBuffersRef.current[articleId] = audioBuffer;
+        const blob = createWavBlob(bytes, 24000);
+        audioUrl = URL.createObjectURL(blob);
+        audioUrlsRef.current[articleId] = audioUrl;
       }
 
-      if (audioSourceRef.current) {
-        audioSourceRef.current.stop();
-        audioSourceRef.current.disconnect();
+      if (audioElRef.current) {
+        audioElRef.current.pause();
       }
 
-      const source = audioCtx.createBufferSource();
-      source.buffer = audioBuffer;
-      source.playbackRate.value = playbackRate;
-      source.connect(audioCtx.destination);
+      const audio = new Audio(audioUrl);
+      audio.playbackRate = playbackRate;
+      audio.preservesPitch = true;
       
-      source.onended = () => {
+      audio.onended = () => {
         setIsPlaying(false);
         setIsPaused(false);
       };
       
-      source.start();
-      audioSourceRef.current = source;
+      audio.play().catch(e => console.error("Audio playback failed", e));
+      audioElRef.current = audio;
       
       setIsPlaying(true);
       setIsPaused(false);
@@ -231,12 +256,12 @@ export function NewsReader({ initialTopicId }: { initialTopicId?: string | null 
   const togglePlayPause = (articleId: string) => {
     if (isPlaying) {
       if (ttsEngine === 'browser' && synthRef.current) synthRef.current.pause();
-      else if (ttsEngine === 'gemini' && audioCtxRef.current) audioCtxRef.current.suspend();
+      else if (ttsEngine === 'gemini' && audioElRef.current) audioElRef.current.pause();
       setIsPlaying(false);
       setIsPaused(true);
     } else if (isPaused) {
       if (ttsEngine === 'browser' && synthRef.current) synthRef.current.resume();
-      else if (ttsEngine === 'gemini' && audioCtxRef.current) audioCtxRef.current.resume();
+      else if (ttsEngine === 'gemini' && audioElRef.current) audioElRef.current.play();
       setIsPlaying(true);
       setIsPaused(false);
     } else {
@@ -253,10 +278,9 @@ export function NewsReader({ initialTopicId }: { initialTopicId?: string | null 
     if (synthRef.current) {
       synthRef.current.cancel();
     }
-    if (audioSourceRef.current) {
-      try { audioSourceRef.current.stop(); } catch (e) {}
-      audioSourceRef.current.disconnect();
-      audioSourceRef.current = null;
+    if (audioElRef.current) {
+      audioElRef.current.pause();
+      audioElRef.current.currentTime = 0;
     }
     setIsPlaying(false);
     setIsPaused(false);
@@ -266,8 +290,8 @@ export function NewsReader({ initialTopicId }: { initialTopicId?: string | null 
     const rate = parseFloat(e.target.value);
     setPlaybackRate(rate);
 
-    if (ttsEngine === 'gemini' && audioSourceRef.current) {
-      audioSourceRef.current.playbackRate.value = rate;
+    if (ttsEngine === 'gemini' && audioElRef.current) {
+      audioElRef.current.playbackRate = rate;
     } else if (ttsEngine === 'browser') {
       if (isPlaying || isPaused) {
         stopAudio();
@@ -288,13 +312,41 @@ export function NewsReader({ initialTopicId }: { initialTopicId?: string | null 
               onClick={() => {
                 stopAudio();
                 setSelectedTopicId(null);
+                setIsEditingName(false);
               }}
               className="flex items-center gap-1 text-zinc-400 hover:text-zinc-100 transition-colors"
             >
               <ChevronLeft size={20} />
               <span>Back</span>
             </button>
-            <h2 className="text-xl font-bold text-zinc-100">{topic?.name}</h2>
+            {isEditingName ? (
+              <div className="flex items-center gap-2">
+                <input
+                  autoFocus
+                  type="text"
+                  value={editingNameValue}
+                  onChange={e => setEditingNameValue(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') handleSaveName();
+                    if (e.key === 'Escape') setIsEditingName(false);
+                  }}
+                  className="bg-zinc-800 border-zinc-700 text-zinc-100 rounded px-2 py-1 focus:outline-none"
+                />
+                <button onClick={handleSaveName} className="text-indigo-400 hover:text-indigo-300">
+                  <Check size={20} />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 group">
+                <h2 className="text-xl font-bold text-zinc-100">{topic?.name}</h2>
+                <button 
+                  onClick={() => { setEditingNameValue(topic?.name || ''); setIsEditingName(true); }}
+                  className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-zinc-300 transition-opacity"
+                >
+                  <Edit2 size={16} />
+                </button>
+              </div>
+            )}
           </div>
         </div>
 

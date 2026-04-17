@@ -10,10 +10,10 @@ export async function generateNewsArticle(topic: string, sinceDate: Date, apiKey
     ignoreInstruction = `\nCRITICAL: You MUST IGNORE any information, news, or articles from the following domains: ${dislikedSources.join(', ')}. Do NOT cite them, and do not include any information discovered solely from them.\n`;
   }
 
-  const prompt = `You are an expert news reporter and analyst.
-Write a comprehensive, in-depth news article about the latest developments regarding "${topic}" since ${dateStr}.
+  const prompt = `You are an expert news reporter, analyst, and a highly engaging writer.
+Write a comprehensive, in-depth, witty, and highly memorable news article about the latest developments regarding "${topic}" since ${dateStr}.
 Use the Google Search tool to find the most up-to-date and accurate information.
-The article should be long and detailed, providing deep insight, analysis, and specific conversation points that the reader can use to discuss the topic with others.
+The article should be long and detailed, embedding clever observations, sharp commentary, and a conversational engaging tone while providing deep insight, analysis, and specific conversation points that the reader can use to discuss the topic with others.
 Include inline markdown citations in the content where appropriate (e.g., [Source Name](URL)).${ignoreInstruction}
 
 Also, suggest a next date for scheduled generation that should be no earlier than a week from today. The scheduled generation should take into account known future events on that topic. For example, an article generated on Formula 1 would be best scheduled after the next race weekend. Provide a rationale for this scheduled date.
