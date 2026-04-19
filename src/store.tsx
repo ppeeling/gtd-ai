@@ -31,6 +31,7 @@ interface AppContextType {
   importData: (data: string) => void;
   exportData: () => string;
   isOffline: boolean;
+  isLoaded: boolean;
   geminiApiKey: string;
   setGeminiApiKey: (key: string) => void;
   upsertNewsTopic: (topic: NewsTopic) => Promise<void>;
@@ -347,6 +348,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         importData,
         exportData,
         isOffline,
+        isLoaded,
         geminiApiKey,
         setGeminiApiKey,
         upsertNewsTopic,

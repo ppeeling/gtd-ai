@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AppProvider, useAppStore } from './store';
 import { Sidebar } from './components/Sidebar';
 import { TaskListView } from './components/TaskListView';
@@ -8,10 +8,36 @@ import { NewsReader } from './components/NewsReader';
 import { Menu, WifiOff, RotateCcw } from 'lucide-react';
 
 function AppContent() {
-  const [activeListId, setActiveListId] = useState('inbox');
-  const [isChatActive, setIsChatActive] = useState(false);
+  const { state, isLoaded, isOffline } = useAppStore();
+  
+  const [activeListId, setActiveListId] = useState(() => {
+    return localStorage.getItem('gtd-active-list') || 'inbox';
+  });
+  const [isChatActive, setIsChatActive] = useState(() => {
+    return localStorage.getItem('gtd-active-chat') === 'true';
+  });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const { isOffline } = useAppStore();
+
+  useEffect(() => {
+    localStorage.setItem('gtd-active-list', activeListId);
+  }, [activeListId]);
+
+  useEffect(() => {
+    localStorage.setItem('gtd-active-chat', String(isChatActive));
+  }, [isChatActive]);
+
+  // Validate active list exists after state is loaded
+  useEffect(() => {
+    if (!isLoaded || isChatActive || activeListId === '__calendar__' || activeListId.startsWith('__rss__')) {
+      return;
+    }
+    
+    // Auto-fallback to inbox if the previously active standard list was deleted
+    const listExists = state.lists.find(l => l.id === activeListId);
+    if (!listExists && activeListId !== 'inbox') {
+      setActiveListId('inbox');
+    }
+  }, [activeListId, isChatActive, isLoaded, state.lists]);
 
   const handleRefresh = async () => {
     if ('serviceWorker' in navigator) {
