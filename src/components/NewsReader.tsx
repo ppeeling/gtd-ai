@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../store';
 import { generateNewsArticle, generateAudio } from '../services/newsGenerator';
-import { Play, Pause, Loader2, Plus, Trash2, Calendar, RefreshCw, ChevronLeft, Settings2, RotateCcw, Search, Clock, ArrowDownUp, Volume2, Edit2, Check } from 'lucide-react';
+import { Play, Pause, Loader2, Plus, Trash2, Calendar, RefreshCw, ChevronLeft, Settings2, RotateCcw, Search, Clock, ArrowDownUp, Volume2, Edit2, Check, ThumbsDown } from 'lucide-react';
 
 function createWavBlob(pcmBytes: Uint8Array, sampleRate: number = 24000): Blob {
   const numChannels = 1;
@@ -148,6 +148,15 @@ export function NewsReader({ initialTopicId }: { initialTopicId?: string | null 
     if (!selectedTopicId) return;
     const topic = newsTopics.find(t => t.id === selectedTopicId);
     if (!topic) return;
+    
+    if (!dateStr) {
+      upsertNewsTopic({
+        ...topic,
+        scheduledDate: null
+      });
+      return;
+    }
+
     const newDate = new Date(dateStr);
     if (!isNaN(newDate.getTime())) {
       upsertNewsTopic({
@@ -483,25 +492,25 @@ export function NewsReader({ initialTopicId }: { initialTopicId?: string | null 
                         >
                           {source.name}
                         </a>
-                        <span className="text-zinc-600">({source.domain})</span>
-                        {!topic.dislikedSources?.includes(source.domain) && (
+                        {!topic.dislikedSources?.includes(source.name) && (
                           <button
                             onClick={() => {
                               const currentDisliked = topic.dislikedSources || [];
-                              if (!currentDisliked.includes(source.domain)) {
+                              if (!currentDisliked.includes(source.name)) {
                                 upsertNewsTopic({
                                   ...topic,
-                                  dislikedSources: [...currentDisliked, source.domain]
+                                  dislikedSources: [...currentDisliked, source.name]
                                 });
                               }
                             }}
-                            className="bg-zinc-800 text-xs text-zinc-400 hover:text-rose-400 hover:bg-zinc-700 px-2 py-1 rounded transition-colors"
+                            className="text-zinc-500 hover:text-rose-400 p-1 rounded transition-colors"
+                            title={`Dislike source: ${source.name}`}
                           >
-                            Dislike Source ({source.domain})
+                            <ThumbsDown size={14} />
                           </button>
                         )}
-                        {topic.dislikedSources?.includes(source.domain) && (
-                          <span className="text-rose-400/80 text-xs italic bg-rose-500/10 px-2 py-1 rounded border border-rose-500/20">Source now disliked</span>
+                        {topic.dislikedSources?.includes(source.name) && (
+                          <span className="text-rose-400/80 text-xs italic bg-rose-500/10 px-2 py-1 rounded border border-rose-500/20">Disliked</span>
                         )}
                       </li>
                     ))}
@@ -529,14 +538,14 @@ export function NewsReader({ initialTopicId }: { initialTopicId?: string | null 
                 <p className="text-sm text-zinc-500 italic">No sources have been disliked yet. Disliking a source will prevent it from being used in future articles.</p>
               ) : (
                 <div className="flex flex-wrap gap-2">
-                  {topic.dislikedSources.map((domain) => (
-                    <div key={domain} className="flex items-center gap-2 bg-rose-500/10 border border-rose-500/20 text-rose-300 text-sm px-3 py-1.5 rounded-lg">
-                      <span>{domain}</span>
+                  {topic.dislikedSources.map((sourceName) => (
+                    <div key={sourceName} className="flex items-center gap-2 bg-rose-500/10 border border-rose-500/20 text-rose-300 text-sm px-3 py-1.5 rounded-lg">
+                      <span>{sourceName}</span>
                       <button
                         onClick={() => {
                           upsertNewsTopic({
                             ...topic!,
-                            dislikedSources: topic.dislikedSources?.filter(d => d !== domain)
+                            dislikedSources: topic.dislikedSources?.filter(d => d !== sourceName)
                           });
                         }}
                         className="text-rose-400 hover:text-rose-200 hover:bg-rose-500/20 rounded-full p-0.5 transition-colors"

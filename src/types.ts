@@ -19,8 +19,8 @@ export interface Task {
   listId: ListId;
   name: string;
   completed: boolean;
-  dueDate?: number; // timestamp
-  reminderDate?: number; // timestamp
+  dueDate?: number | null; // timestamp
+  reminderDate?: number | null; // timestamp
   timer: TaskTimer;
   createdAt: number;
   order?: number;

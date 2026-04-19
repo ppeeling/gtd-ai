@@ -100,25 +100,28 @@ export const TaskItem: React.FC<{ task: Task }> = ({ task }) => {
 
         <div className="flex-1 min-w-0">
           {isEditing ? (
-            <div className="relative flex items-center">
-              <input
+            <div className="relative flex items-start">
+              <textarea
                 autoFocus
-                type="text"
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleSaveEdit();
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSaveEdit();
+                  }
                   if (e.key === 'Escape') handleCancelEdit();
                 }}
                 onBlur={handleCancelEdit}
-                className="w-full px-2 py-1 pr-8 text-sm bg-zinc-800 border border-indigo-500 text-zinc-100 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                rows={3}
+                className="w-full px-2 py-2 pr-8 text-sm bg-zinc-800 border border-indigo-500 text-zinc-100 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y min-h-[60px]"
               />
               <button
                 onMouseDown={(e) => {
                   e.preventDefault(); // Prevent blur from firing before click
                   handleCancelEdit();
                 }}
-                className="absolute right-2 text-zinc-400 hover:text-zinc-200 transition-colors"
+                className="absolute right-2 top-2.5 text-zinc-400 hover:text-zinc-200 transition-colors"
                 aria-label="Cancel edit"
               >
                 <XCircle size={14} />
@@ -127,7 +130,7 @@ export const TaskItem: React.FC<{ task: Task }> = ({ task }) => {
           ) : (
             <h3 
               onClick={() => setIsEditing(true)}
-              className={`text-base font-medium text-zinc-100 break-words cursor-text hover:text-indigo-400 transition-colors ${task.completed ? 'line-through text-zinc-500 hover:text-zinc-400' : ''}`}
+              className={`text-base font-medium text-zinc-100 break-words whitespace-pre-wrap cursor-text hover:text-indigo-400 transition-colors ${task.completed ? 'line-through text-zinc-500 hover:text-zinc-400' : ''}`}
             >
               {task.name}
             </h3>
@@ -184,7 +187,7 @@ export const TaskItem: React.FC<{ task: Task }> = ({ task }) => {
               type="date"
               value={task.dueDate ? new Date(task.dueDate - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0] : ''}
               onChange={(e) => {
-                const date = e.target.value ? new Date(e.target.value).getTime() : undefined;
+                const date = e.target.value ? new Date(e.target.value).getTime() : null;
                 updateTask(task.id, { dueDate: date });
               }}
               onClick={(e) => (e.target as any).showPicker?.()}
@@ -192,7 +195,7 @@ export const TaskItem: React.FC<{ task: Task }> = ({ task }) => {
             />
             {task.dueDate && (
               <button
-                onClick={() => updateTask(task.id, { dueDate: undefined })}
+                onClick={() => updateTask(task.id, { dueDate: null })}
                 className="absolute right-0 p-1 text-zinc-600 hover:text-rose-400 transition-colors"
                 title="Clear due date"
               >
@@ -206,7 +209,7 @@ export const TaskItem: React.FC<{ task: Task }> = ({ task }) => {
               type="datetime-local"
               value={task.reminderDate ? new Date(task.reminderDate - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}
               onChange={(e) => {
-                const date = e.target.value ? new Date(e.target.value).getTime() : undefined;
+                const date = e.target.value ? new Date(e.target.value).getTime() : null;
                 updateTask(task.id, { reminderDate: date });
               }}
               onClick={(e) => (e.target as any).showPicker?.()}
@@ -214,7 +217,7 @@ export const TaskItem: React.FC<{ task: Task }> = ({ task }) => {
             />
             {task.reminderDate && (
               <button
-                onClick={() => updateTask(task.id, { reminderDate: undefined })}
+                onClick={() => updateTask(task.id, { reminderDate: null })}
                 className="absolute right-0 p-1 text-zinc-600 hover:text-rose-400 transition-colors"
                 title="Clear reminder"
               >

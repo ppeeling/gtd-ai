@@ -7,7 +7,7 @@ export async function generateNewsArticle(topic: string, sinceDate: Date, apiKey
   
   let ignoreInstruction = '';
   if (dislikedSources.length > 0) {
-    ignoreInstruction = `\nCRITICAL: You MUST IGNORE any information, news, or articles from the following domains: ${dislikedSources.join(', ')}. Do NOT cite them, and do not include any information discovered solely from them.\n`;
+    ignoreInstruction = `\nCRITICAL: You MUST IGNORE any information, news, or articles from the following sources: ${dislikedSources.join(', ')}. Do NOT cite them, and do not include any information discovered solely from them.\n`;
   }
 
   const prompt = `You are an expert news reporter, analyst, and a highly engaging writer.
@@ -23,7 +23,7 @@ Return ONLY a valid JSON object (without markdown formatting or code blocks) wit
 - "content": The body paragraphs of the article, separated by double newlines. Includes inline markdown links.
 - "nextScheduledDate": The suggested next scheduled generation date in ISO format (YYYY-MM-DD).
 - "rationale": The rationale for the suggested next scheduled date.
-- "sources": An array of objects for the sources used, each with "name" (string), "url" (string), and "domain" (string - the top-level domain e.g. "bbc.co.uk").`;
+- "sources": An array of objects for the sources used, each with "name" (string) and "url" (string).`;
 
   try {
     const response = await ai.models.generateContent({
