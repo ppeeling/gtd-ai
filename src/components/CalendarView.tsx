@@ -28,7 +28,16 @@ export function CalendarView({ onNavigate }: { onNavigate?: (path: string) => vo
   }
 
   const allItems: CalendarItem[] = [
-    ...calendarTasks.map(t => ({ type: 'task' as const, data: t, date: t.dueDate || t.reminderDate || 0 })),
+    ...calendarTasks.flatMap(t => {
+      const items: CalendarItem[] = [];
+      if (t.dueDate) {
+        items.push({ type: 'task' as const, data: t, date: t.dueDate });
+      }
+      if (t.reminderDate) {
+        items.push({ type: 'task' as const, data: t, date: t.reminderDate });
+      }
+      return items;
+    }),
     ...calendarNews.map(t => ({ type: 'news' as const, data: t, date: t.scheduledDate! }))
   ];
 
